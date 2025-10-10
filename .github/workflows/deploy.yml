@@ -48,7 +48,9 @@ jobs:
         run: echo "SSH_USER=${{ env.SSH_USER }}, SSH_HOST=${{ env.SSH_HOST }}"
       - name: Write SSH key
         run: |
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > key.pem
+          cat > key.pem << 'EOF'
+          ${{ secrets.SSH_PRIVATE_KEY }}
+          EOF
           chmod 600 key.pem
 
       - name: Deploy on VM
