@@ -3,13 +3,12 @@ export const runtime = "nodejs";
 
 export async function GET(
   _req: NextRequest,
-  ctx: { params: { pdb: string } }
+  { params }: { params: Promise<{ pdb: string }> } // ← Promise 로 받기
 ) {
   try {
-    const { pdb } = ctx.params;
+    const { pdb } = await params;                 // ← await 추가
     const pdbName = decodeURIComponent(pdb);
 
-    // 고정 경로 2개만 사용
     const matrixUrl = `http://192.168.150.30:5000/matrix_high/${encodeURIComponent(
       pdbName
     )}_matrix.json`;
@@ -38,16 +37,8 @@ export async function GET(
       );
     }
 
-    // 원본 JSON (xLabels, yLabels, matrix 또는 data…)을 그대로 받고 imageUrl만 주입
     const base = await r.json();
-
-    return NextResponse.json(
-      {
-        ...base,
-        imageUrl, // 프리뷰 이미지 바로 접근 가능
-      },
-      { status: 200 }
-    );
+    return NextResponse.json({ ...base, imageUrl }, { status: 200 });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return NextResponse.json({ error: msg }, { status: 500 });
