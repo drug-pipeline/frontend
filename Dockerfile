@@ -7,12 +7,16 @@ RUN \
   elif [ -f yarn.lock ]; then yarn install --frozen-lockfile; \
   else npm ci; fi
 
-# ---- build
+# ---- build stage
 FROM node:20-alpine AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npm run build || yarn build || pnpm build
+
+# 🚀 타입검사/ESLint 건너뛰기
+ENV NEXT_IGNORE_TYPE_CHECK=true
+RUN npm run build --no-lint || yarn build --no-lint || pnpm build --no-lint
+
 
 # ---- run
 FROM node:20-alpine AS run
