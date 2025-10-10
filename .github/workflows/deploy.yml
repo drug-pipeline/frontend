@@ -83,77 +83,27 @@ jobs:
         run: |
           ssh -vvv -o StrictHostKeyChecking=no -i key.pem ${SSH_USER:-ubuntu}@${SSH_HOST} 'whoami && id && uname -a && echo OK'
 
-      - name: Deploy on VM (with rich diagnostics)
+      - name: Deploy on VM (pull frontend only)
         env:
           SSH_HOST: ${{ env.SSH_HOST }}
           SSH_USER: ${{ env.SSH_USER }}
-          REGION: ${{ env.REGION }}
-          PROJECT_ID: ${{ env.PROJECT_ID }}
         run: |
           ssh -o StrictHostKeyChecking=no -i key.pem ${SSH_USER:-ubuntu}@${SSH_HOST} 'bash -se' <<'EOSH'
           set -euo pipefail
-          echo "=== System diagnostics (pre) ==="
-          whoami || true
-          id || true
-          echo "Hostname: $(hostname)"
-          echo "Uptime: $(uptime -p)"
-          echo "--- df -h ---"; df -h || true
-          echo "--- free -h ---"; free -h || true
-          echo "--- listening 22/80/3000 ---"
-          sudo ss -ltnp '( sport = :22 )' || true
-          sudo ss -ltnp '( sport = :80 )' || true
-          sudo ss -ltnp '( sport = :3000 )' || true
-          echo "--- docker version/info ---"
-          docker version || true
-          docker info || true
+          cd ~/apps/stack
 
-          mkdir -p ~/apps/frontend
-          cd ~/apps/frontend
+          # Ensure compose file & .env exist (first time only)
+          if [ ! -f docker-compose.yml ]; then echo "ERROR: ~/apps/stack/docker-compose.yml missing"; exit 1; fi
+          if [ ! -f .env ]; then echo "ERROR: ~/apps/stack/.env missing"; exit 1; fi
 
-          echo "=== Ensure Artifact Registry auth (if gcloud exists) ==="
-          if command -v gcloud >/dev/null 2>&1; then
-            gcloud --version || true
-            gcloud auth configure-docker '"${REGION}"'-docker.pkg.dev -q || true
-          else
-            echo "gcloud not installed; assuming VM already has pull access via attached service account."
-          fi
+          echo "--- Pulling images (frontend + proxy) ---"
+          docker compose pull reverse-proxy frontend
 
-          echo "=== Ensure docker-compose.yml exists ==="
-          if [ ! -f docker-compose.yml ]; then
-            printf '%s\n' \
-              'services:' \
-              '  web:' \
-              '    image: '"${REGION}"'-docker.pkg.dev/'"${PROJECT_ID}"'/frontend/frontend:latest' \
-              '    restart: always' \
-              '    ports:' \
-              '      - "80:3000"' \
-            > docker-compose.yml
-          fi
+          echo "--- Restarting services ---"
+          docker compose up -d reverse-proxy frontend
 
-          echo "=== Current docker-compose.yml ==="
-          sed -n '1,200p' docker-compose.yml || true
-
-          echo "=== Pull & restart ==="
-          docker compose pull
-          docker compose up -d
-
-          echo "=== Prune dangling images ==="
-          docker image prune -f || true
-
-          echo "=== Post-deploy checks ==="
+          echo "--- Check ---"
           docker compose ps
-          WEB_CID=$(docker compose ps -q web || true)
-          if [ -n "$WEB_CID" ]; then
-            echo "--- logs (last 120 lines) ---"
-            docker logs "$WEB_CID" --tail=120 || true
-          else
-            echo "web container id not found!"
-          fi
-
-          echo "--- curl localhost:3000 ---"
-          (curl -sSI http://127.0.0.1:3000 || true) | sed -n '1,20p'
-          echo "--- curl localhost (port 80) ---"
-          (curl -sSI http://127.0.0.1 || true) | sed -n '1,20p'
-
-          echo "=== Done ==="
+          curl -sSI http://127.0.0.1 | sed -n '1,20p' || true
           EOSH
+
