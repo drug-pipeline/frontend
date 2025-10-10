@@ -81,7 +81,7 @@ function Landing() {
                   }}
                 />
                 <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
-                  <PrimaryButton href="/login" size="lg">
+                  <PrimaryButton href="/pipeline" size="lg">
                     Sign in
                   </PrimaryButton>
                   <SecondaryButton href="/signup" size="lg">
