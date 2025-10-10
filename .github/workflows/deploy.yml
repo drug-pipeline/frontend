@@ -1,0 +1,53 @@
+name: Deploy Frontend to GCE
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: <PROJECT_ID>
+  REGION: asia-northeast3
+  REPO_NAME: frontend
+  IMAGE_NAME: frontend
+  IMAGE_URI: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.IMAGE_NAME }}
+  SSH_USER: ubuntu
+  SSH_HOST: ${{ secrets.SSH_HOST }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Auth to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}   # github-deploy 키(JSON)
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev -q
+
+      - name: Build & Push image
+        run: |
+          docker build -t $IMAGE_URI:latest .
+          docker push $IMAGE_URI:latest
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup SSH key
+        run: |
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > key.pem
+          chmod 600 key.pem
+
+      - name: Deploy on VM
+        run: |
+          ssh -o StrictHostKeyChecking=no -i key.pem ${{ env.SSH_USER }}@${{ env.SSH_HOST }} << 'EOF'
+            set -e
+            cd ~/apps/frontend
+            docker compose pull
+            docker compose up -d
+            docker image prune -f
+          EOF
