@@ -68,6 +68,13 @@ jobs:
           echo "Fingerprint of key.pem that GitHub will use:"
           ssh-keygen -y -f key.pem | ssh-keygen -lf -
 
+      - name: Print public key that runner uses (paste this into VM)
+        run: |
+          echo "=== PUBLIC KEY (add this to authorized_keys) ==="
+          ssh-keygen -y -f key.pem
+          echo "=== FINGERPRINT ==="
+          ssh-keygen -y -f key.pem | ssh-keygen -lf -
+
       - name: Test SSH connectivity (-vvv)
         env:
           SSH_HOST: ${{ env.SSH_HOST }}
