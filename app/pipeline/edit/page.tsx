@@ -20,6 +20,7 @@ import "reactflow/dist/style.css";
 
 import Header from "@/app/components/pipeline2/Header";
 
+
 // ===== 모듈 사양 =====
 type ModuleKey =
     | "pdb-input"

@@ -3,6 +3,9 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Script from "next/script";
 
+// ✅ 클라이언트 전용 전환 래퍼만 불러와서 사용
+import PageTransition from "./components/PageTransition";
+
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
@@ -17,13 +20,13 @@ export const metadata: Metadata = {
   title: "Drug Discovery Pipeline",
   description: "Build, run, and visualize your drug-discovery workflows",
   icons: {
-    icon: "/favicon.svg"
-  }
+    icon: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ko">
+    <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
       <head>
         <Script src="/examples/ngl/ngl.js" strategy="beforeInteractive" />
         <Script src="/examples/js/lib/signals.min.js" strategy="beforeInteractive" />
@@ -33,7 +36,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Script src="/examples/js/ui/ui.extra.js" strategy="beforeInteractive" />
         <Script src="/examples/js/ui/ui.ngl.js" strategy="beforeInteractive" />
       </head>
-      <body>{children}</body>
+      <body className="bg-white text-zinc-900">
+        {/* ✅ 여기만 전환 래퍼로 감싸기 */}
+        <PageTransition>{children}</PageTransition>
+      </body>
     </html>
   );
 }
