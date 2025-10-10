@@ -2,7 +2,7 @@ name: Deploy Frontend to GCE
 
 on:
   push:
-    branches: [ "master" ]   # 기본 브랜치가 main이면 여기 main으로 바꾸세요
+    branches: [ "master" ]   # 기본 브랜치가 main이면 main으로 바꾸세요
   workflow_dispatch:
 
 env:
@@ -37,10 +37,15 @@ jobs:
 
       - name: Build & Push image (latest + sha)
         run: |
+          set -euo pipefail
           SHA_TAG=${GITHUB_SHA::7}
+          echo "Building image: $IMAGE_URI (tags: latest, $SHA_TAG)"
           docker build -t "$IMAGE_URI:latest" -t "$IMAGE_URI:$SHA_TAG" .
+          echo "Pushing image: latest"
           docker push "$IMAGE_URI:latest"
+          echo "Pushing image: $SHA_TAG"
           docker push "$IMAGE_URI:$SHA_TAG"
+          echo "Image push complete."
 
   deploy:
     needs: build-and-push
@@ -53,42 +58,94 @@ jobs:
           EOF
           chmod 600 key.pem
 
-      - name: Test SSH (debug)
+      - name: Show resolved SSH vars + key fingerprint
         env:
           SSH_HOST: ${{ env.SSH_HOST }}
           SSH_USER: ${{ env.SSH_USER }}
         run: |
-          ssh -o StrictHostKeyChecking=no -i key.pem ${SSH_USER:-ubuntu}@${SSH_HOST} 'echo OK'
+          echo "Resolved SSH_USER=${SSH_USER:-ubuntu}"
+          echo "Resolved SSH_HOST=${SSH_HOST}"
+          echo "Fingerprint of key.pem that GitHub will use:"
+          ssh-keygen -y -f key.pem | ssh-keygen -lf -
 
-      - name: Deploy on VM
+      - name: Test SSH connectivity (-vvv)
         env:
           SSH_HOST: ${{ env.SSH_HOST }}
           SSH_USER: ${{ env.SSH_USER }}
+        run: |
+          ssh -vvv -o StrictHostKeyChecking=no -i key.pem ${SSH_USER:-ubuntu}@${SSH_HOST} 'whoami && id && uname -a && echo OK'
+
+      - name: Deploy on VM (with rich diagnostics)
+        env:
+          SSH_HOST: ${{ env.SSH_HOST }}
+          SSH_USER: ${{ env.SSH_USER }}
+          REGION: ${{ env.REGION }}
+          PROJECT_ID: ${{ env.PROJECT_ID }}
         run: |
           ssh -o StrictHostKeyChecking=no -i key.pem ${SSH_USER:-ubuntu}@${SSH_HOST} 'bash -se' <<'EOSH'
-          set -e
+          set -euo pipefail
+          echo "=== System diagnostics (pre) ==="
+          whoami || true
+          id || true
+          echo "Hostname: $(hostname)"
+          echo "Uptime: $(uptime -p)"
+          echo "--- df -h ---"; df -h || true
+          echo "--- free -h ---"; free -h || true
+          echo "--- listening 22/80/3000 ---"
+          sudo ss -ltnp '( sport = :22 )' || true
+          sudo ss -ltnp '( sport = :80 )' || true
+          sudo ss -ltnp '( sport = :3000 )' || true
+          echo "--- docker version/info ---"
+          docker version || true
+          docker info || true
+
           mkdir -p ~/apps/frontend
           cd ~/apps/frontend
 
-          # docker-compose.yml 없으면 생성(있으면 유지)
+          echo "=== Ensure Artifact Registry auth (if gcloud exists) ==="
+          if command -v gcloud >/dev/null 2>&1; then
+            gcloud --version || true
+            gcloud auth configure-docker '"${REGION}"'-docker.pkg.dev -q || true
+          else
+            echo "gcloud not installed; assuming VM already has pull access via attached service account."
+          fi
+
+          echo "=== Ensure docker-compose.yml exists ==="
           if [ ! -f docker-compose.yml ]; then
             printf '%s\n' \
               'services:' \
               '  web:' \
-              '    image: asia-northeast3-docker.pkg.dev/nimble-poet-474703-f7/frontend/frontend:latest' \
+              '    image: '"${REGION}"'-docker.pkg.dev/'"${PROJECT_ID}"'/frontend/frontend:latest' \
               '    restart: always' \
               '    ports:' \
               '      - "80:3000"' \
-              > docker-compose.yml
-            # 환경변수 필요하면 아래처럼 이어 붙이세요:
-            # printf '%s\n' \
-            #   '    environment:' \
-            #   '      - NEXT_PUBLIC_BACKEND_URL=https://<your-backend>' \
-            #   >> docker-compose.yml
+            > docker-compose.yml
           fi
 
+          echo "=== Current docker-compose.yml ==="
+          sed -n '1,200p' docker-compose.yml || true
+
+          echo "=== Pull & restart ==="
           docker compose pull
           docker compose up -d
-          docker image prune -f
+
+          echo "=== Prune dangling images ==="
+          docker image prune -f || true
+
+          echo "=== Post-deploy checks ==="
           docker compose ps
+          WEB_CID=$(docker compose ps -q web || true)
+          if [ -n "$WEB_CID" ]; then
+            echo "--- logs (last 120 lines) ---"
+            docker logs "$WEB_CID" --tail=120 || true
+          else
+            echo "web container id not found!"
+          fi
+
+          echo "--- curl localhost:3000 ---"
+          (curl -sSI http://127.0.0.1:3000 || true) | sed -n '1,20p'
+          echo "--- curl localhost (port 80) ---"
+          (curl -sSI http://127.0.0.1 || true) | sed -n '1,20p'
+
+          echo "=== Done ==="
           EOSH
