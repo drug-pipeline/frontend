@@ -1,9 +1,4 @@
-// app/page.tsx — Monochrome high-contrast landing (v2)
-// - Floating Docs + Help (same style)
-// - Single CTA moved above feature grid
-// - Feature cards hover radius fixed (overflow-hidden)
-// - Feature cards link to /documentation
-// - Footer sticks to bottom
+// app/page.tsx — CTA 강조 + 컴팩트 푸터 (v4)
 
 import React from "react";
 import Link from "next/link";
@@ -27,13 +22,12 @@ function Landing() {
         <FloatingPill href="/help" label="Help" />
       </div>
 
-      {/* HERO (monochrome geometry) */}
+      {/* HERO */}
       <section className="relative overflow-hidden">
-        {/* Big shapes */}
         <div aria-hidden className="pointer-events-none absolute inset-0">
           <div className="absolute left-1/2 top-[-16rem] h-[46rem] w-[46rem] -translate-x-1/2 rounded-full bg-zinc-900/10 blur-3xl" />
           <div className="absolute right-[-14rem] top-[6rem] h-[30rem] w-[30rem] rotate-12 rounded-[999px] bg-zinc-900/5 blur-2xl" />
-          <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(24,24,27,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(24,24,27,0.08)_1px,transparent_1px)] bg-[size:32px_32px]" />
+          <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(24,24,27,0.06)_1px,transparent_1px),linear-gradient(to_bottom,rgba(24,24,27,0.06)_1px,transparent_1px)] bg-[size:32px_32px]" />
         </div>
 
         <div className="relative mx-auto max-w-7xl px-4">
@@ -51,7 +45,6 @@ function Landing() {
           </div>
         </div>
 
-        {/* Concentric outline accent */}
         <div className="pointer-events-none absolute left-1/2 top-[20%] -z-10 -translate-x-1/2 opacity-60">
           <svg viewBox="0 0 600 600" width="760" height="760" className="max-w-none" aria-hidden>
             <circle cx="300" cy="300" r="250" fill="none" stroke="currentColor" strokeOpacity="0.06" strokeWidth="2" />
@@ -62,46 +55,86 @@ function Landing() {
         </div>
       </section>
 
-      {/* SINGLE CTA — moved above feature grid */}
+      {/* CTA — buttons first, checklist later */}
       <section className="relative mx-auto w-full max-w-7xl px-4 pb-12">
-        <div className="grid place-items-center rounded-xl border-2 border-zinc-900 bg-white p-6 text-center">
-          <h2 className="text-xl font-bold tracking-tight sm:text-2xl">Ready to get started?</h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-600">
-            Sign in if you already have an account — or create one to start building your first pipeline.
-          </p>
-          <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
-            <PrimaryButton href="/login">Sign in</PrimaryButton>
-            <SecondaryButton href="/signup">Create account</SecondaryButton>
+        <div className="relative rounded-2xl p-[1px]">
+          {/* subtle gradient ring */}
+          <div className="absolute inset-0 rounded-2xl bg-[conic-gradient(from_120deg,rgba(0,0,0,0.1),rgba(0,0,0,0.04),rgba(0,0,0,0.12))]" />
+          <div className="relative rounded-2xl bg-white/80 p-6 backdrop-blur-sm sm:p-8">
+            <div className="mx-auto max-w-3xl text-center">
+              <h2 className="text-xl font-bold tracking-tight sm:text-2xl">
+                Ready to get started?
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-zinc-600">
+                Jump in now — sign in or create your account.
+              </p>
+
+              {/* ✨ Button focus zone */}
+              <div className="relative mx-auto mt-6 max-w-xl">
+                {/* soft spotlight behind buttons */}
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute inset-0 -z-10 rounded-xl"
+                  style={{
+                    background:
+                      "radial-gradient(40% 60% at 50% 40%, rgba(0,0,0,0.06), transparent 70%)",
+                  }}
+                />
+                <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
+                  <PrimaryButton href="/login" size="lg">
+                    Sign in
+                  </PrimaryButton>
+                  <SecondaryButton href="/signup" size="lg">
+                    Create account
+                  </SecondaryButton>
+                </div>
+              </div>
+
+              {/* divider */}
+              <div className="mx-auto mt-6 h-px w-24 bg-zinc-200/80" />
+
+              {/* compact checklist (smaller + 아래로 이동) */}
+              <ul className="mx-auto mt-4 grid max-w-2xl gap-2 text-left sm:grid-cols-3 sm:gap-3">
+                <CheckItem small>Drag &amp; connect modules</CheckItem>
+                <CheckItem small>Structure visualization</CheckItem>
+                <CheckItem small>Docking &amp; ADMET review</CheckItem>
+              </ul>
+            </div>
           </div>
         </div>
       </section>
 
-      {/* FEATURE GRID — stronger cards, fixed hover radius, link to /documentation */}
+      {/* FEATURE GRID — keep as is (you said it's great!) */}
       <section className="relative mx-auto w-full max-w-7xl px-4 pb-16">
         <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <FeatureLink
+          <FeatureCard
             href="/documentation"
+            icon={<IconFlow />}
             title="Compose Pipelines"
             desc="Drag, connect, and iterate on modules to shape your workflow."
           />
-          <FeatureLink
+          <FeatureCard
             href="/documentation"
+            icon={<IconProtein />}
             title="Visualize Structures"
             desc="Inspect PDBs, highlight residues, and link to sequences instantly."
           />
-          <FeatureLink
+          <FeatureCard
             href="/documentation"
+            icon={<IconDock />}
             title="Docking & Scoring"
             desc="Run Vina or custom scoring; review interactions and distances."
           />
-          <FeatureLink
+          <FeatureCard
             href="/documentation"
+            icon={<IconLab />}
             title="ADMET at a Glance"
             desc="Batch-evaluate molecules and compare properties side by side."
           />
         </ul>
       </section>
 
+      {/* FOOTER — ultra-compact, no brand label */}
       <SiteFooter />
     </main>
   );
@@ -113,49 +146,16 @@ function FloatingPill({ href, label }: { href: string; label: string }) {
   return (
     <Link
       href={href}
-      className="rounded-full border-2 border-zinc-900 bg-white/90 px-3 py-1.5 text-xs font-semibold tracking-tight text-zinc-900 shadow-[0_0_0_1px_rgba(0,0,0,0.06)_inset] hover:bg-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400"
+      className="rounded-full border border-zinc-200 bg-white/90 px-3 py-1.5 text-xs font-semibold tracking-tight text-zinc-900 shadow-sm transition hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-zinc-300"
     >
       {label}
     </Link>
   );
 }
 
-function FeatureLink({
-  href,
-  title,
-  desc,
-}: {
-  href: string;
-  title: string;
-  desc: string;
-}) {
-  return (
-    <li>
-      <Link
-        href={href}
-        className="group relative block overflow-hidden rounded-xl border-2 border-zinc-900 bg-white p-5 transition"
-      >
-        {/* Hover fill (clipped by overflow + same radius) */}
-        <div className="absolute inset-0 transition group-hover:bg-zinc-900" aria-hidden />
-        <div className="relative">
-          <h3 className="text-lg font-extrabold leading-tight tracking-tight group-hover:text-white">
-            {title}
-          </h3>
-          <p className="mt-2 text-sm text-zinc-700 group-hover:text-zinc-200">{desc}</p>
-        </div>
-        {/* corner accent */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -right-2 -top-2 h-6 w-6 rounded-full border-2 border-zinc-900 bg-white transition group-hover:bg-zinc-900"
-        />
-      </Link>
-    </li>
-  );
-}
-
 function Badge({ children }: { children: React.ReactNode }) {
   return (
-    <span className="inline-flex items-center gap-2 rounded-full border-2 border-zinc-900 bg-white px-3 py-1 text-[11px] font-semibold tracking-tight text-zinc-900">
+    <span className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white/90 px-3 py-1 text-[11px] font-semibold tracking-tight text-zinc-900 shadow-sm">
       <span className="inline-block h-1.5 w-1.5 rounded-full bg-zinc-900" />
       {children}
     </span>
@@ -165,16 +165,23 @@ function Badge({ children }: { children: React.ReactNode }) {
 function PrimaryButton({
   href,
   children,
+  size = "md",
 }: {
   href: string;
   children: React.ReactNode;
+  size?: "md" | "lg";
 }) {
+  const cls =
+    size === "lg"
+      ? "px-7 py-3.5 text-[15px]"
+      : "px-6 py-3 text-sm";
   return (
     <Link
       href={href}
-      className="inline-flex items-center justify-center rounded-lg border-2 border-zinc-900 bg-zinc-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-black active:translate-y-[1px]"
+      className={`group inline-flex min-w-[10rem] items-center justify-center gap-1.5 rounded-lg bg-zinc-900 text-white shadow-sm transition hover:bg-black focus:outline-none focus:ring-2 focus:ring-zinc-400 active:translate-y-[1px] ${cls}`}
     >
       {children}
+      <ArrowRight className="size-4 translate-x-0 transition group-hover:translate-x-0.5" />
     </Link>
   );
 }
@@ -182,53 +189,155 @@ function PrimaryButton({
 function SecondaryButton({
   href,
   children,
+  size = "md",
 }: {
   href: string;
   children: React.ReactNode;
+  size?: "md" | "lg";
 }) {
+  const cls =
+    size === "lg"
+      ? "px-7 py-3.5 text-[15px]"
+      : "px-6 py-3 text-sm";
   return (
     <Link
       href={href}
-      className="inline-flex items-center justify-center rounded-lg border-2 border-zinc-900 bg-white px-6 py-3 text-sm font-semibold text-zinc-900 transition hover:bg-zinc-100 active:translate-y-[1px]"
+      className={`inline-flex min-w-[10rem] items-center justify-center gap-1.5 rounded-lg border border-zinc-200 bg-white text-zinc-900 shadow-sm transition hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-zinc-300 active:translate-y-[1px] ${cls}`}
     >
       {children}
     </Link>
   );
 }
 
-function SiteFooter() {
-  // Sticks to bottom via flex container (mt-auto)
+function CheckItem({
+  children,
+  small = false,
+}: {
+  children: React.ReactNode;
+  small?: boolean;
+}) {
   return (
-    <footer className="mt-auto border-t border-zinc-200">
-      <div className="mx-auto max-w-7xl px-4 py-8 text-sm text-zinc-500">
-        <div className="flex flex-col items-start justify-between gap-6 sm:flex-row sm:items-center">
-          <div className="flex items-center gap-2">
-            <Logo small />
-            <span>Drug Discovery Web</span>
-          </div>
-          <div className="flex flex-wrap gap-4">
-            <Link href="/privacy" className="hover:text-zinc-700">Privacy</Link>
-            <Link href="/terms" className="hover:text-zinc-700">Terms</Link>
-            <Link href="/contact" className="hover:text-zinc-700">Contact</Link>
-          </div>
-        </div>
-        <p className="mt-6 text-xs">
-          © {new Date().getFullYear()} Your Organization. All rights reserved.
-        </p>
-      </div>
-    </footer>
+    <li
+      className={`flex items-center gap-2 rounded-md border border-zinc-200/70 bg-white/70 px-3 py-2 shadow-sm ${
+        small ? "text-[12px]" : "text-sm"
+      }`}
+    >
+      <IconCheck className="size-4" />
+      <span className="text-zinc-700">{children}</span>
+    </li>
   );
 }
 
-function Logo({ small }: { small?: boolean }) {
+/* Feature Card */
+function FeatureCard({
+  href,
+  icon,
+  title,
+  desc,
+}: {
+  href: string;
+  icon: React.ReactNode;
+  title: string;
+  desc: string;
+}) {
   return (
-    <svg viewBox="0 0 32 32" className={small ? "h-5 w-5" : "h-7 w-7"} aria-hidden>
-      <rect x="2" y="2" width="28" height="28" rx="7" fill="#000000" opacity="0.08" />
-      <path
-        d="M9 16c0-3.866 3.134-7 7-7s7 3.134 7 7-3.134 7-7 7-2.5-.5-3.5-1.5L9 23l1.5-3.5C9.5 18.5 9 17 9 16Z"
-        fill="#000000"
-        opacity="0.6"
-      />
+    <li>
+      <Link
+        href={href}
+        className="group relative block rounded-xl border border-zinc-200 bg-white p-5 shadow-sm ring-1 ring-transparent transition hover:-translate-y-0.5 hover:shadow-md hover:ring-zinc-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+      >
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -right-2 -top-2 h-6 w-6 rounded-full bg-zinc-900/5 transition group-hover:bg-zinc-900/10"
+        />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 rounded-xl opacity-0 transition group-hover:opacity-100"
+          style={{
+            background:
+              "radial-gradient(30rem 30rem at 80% -10%, rgba(0,0,0,0.05), transparent 60%)",
+          }}
+        />
+        <div className="relative">
+          <div className="mb-3 inline-flex items-center justify-center rounded-lg border border-zinc-200 bg-white p-2 shadow-sm">
+            <span className="opacity-80">{icon}</span>
+          </div>
+          <h3 className="text-lg font-extrabold leading-tight tracking-tight">
+            {title}
+          </h3>
+          <p className="mt-2 text-sm text-zinc-700">{desc}</p>
+          <div className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-zinc-900">
+            <span>Learn more</span>
+            <ArrowRight className="size-4 translate-x-0 transition group-hover:translate-x-1" />
+          </div>
+        </div>
+      </Link>
+    </li>
+  );
+}
+
+/* Icons */
+function ArrowRight({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden>
+      <path d="M5 12h12M13 6l6 6-6 6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
+  );
+}
+function IconCheck({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 20 20" className={className} aria-hidden>
+      <path d="M16.7 5.7l-7.7 7.7-3.7-3.7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function IconFlow() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-5" aria-hidden>
+      <path d="M6 6h4v4H6zM14 14h4v4h-4z" fill="currentColor" opacity=".15" />
+      <path d="M10 8h4m0 0v4m0 0h4M6 8h0" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+function IconProtein() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-5" aria-hidden>
+      <circle cx="7" cy="7" r="3" fill="currentColor" opacity=".15" />
+      <circle cx="17" cy="17" r="3" fill="currentColor" opacity=".15" />
+      <path d="M9.5 9.5l5 5M4 12c4 0 12 0 16 0" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+function IconDock() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-5" aria-hidden>
+      <circle cx="6" cy="12" r="2" fill="currentColor" opacity=".15" />
+      <circle cx="18" cy="12" r="2" fill="currentColor" opacity=".15" />
+      <path d="M8 12h8M12 6v12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+function IconLab() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-5" aria-hidden>
+      <path d="M9 3v5l-4 8a4 4 0 003.6 5.7h6.8A4 4 0 0019 16l-4-8V3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M9 8h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/* Ultra-compact footer (no brand) */
+function SiteFooter() {
+  return (
+    <footer className="mt-auto border-t border-zinc-200/80">
+      <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-4 py-4 text-xs text-zinc-500">
+        <div className="flex flex-wrap gap-4">
+          <Link href="/privacy" className="hover:text-zinc-700">Privacy</Link>
+          <Link href="/terms" className="hover:text-zinc-700">Terms</Link>
+          <Link href="/contact" className="hover:text-zinc-700">Contact</Link>
+        </div>
+        <span>© {new Date().getFullYear()} Your Organization</span>
+      </div>
+    </footer>
   );
 }
