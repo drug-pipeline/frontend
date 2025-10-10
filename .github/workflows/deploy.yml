@@ -6,13 +6,12 @@ on:
   workflow_dispatch:
 
 env:
-  PROJECT_ID: <PROJECT_ID>
+  PROJECT_ID: nimble-poet-474703-f7          # <-- 바꾸기
   REGION: asia-northeast3
   REPO_NAME: frontend
   IMAGE_NAME: frontend
-  IMAGE_URI: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.IMAGE_NAME }}
-  SSH_USER: ubuntu
   SSH_HOST: ${{ secrets.SSH_HOST }}
+  SSH_USER: ${{ secrets.SSH_USER }}        # secrets에 넣었으면 이렇게 받기 (없으면 'ubuntu'로 하드코딩해도 OK)
 
 jobs:
   build-and-push:
@@ -23,28 +22,43 @@ jobs:
       - name: Auth to Google Cloud
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}   # github-deploy 키(JSON)
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Setup gcloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
 
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev -q
 
+      - name: Compose IMAGE_URI and export to env
+        run: |
+          IMAGE_URI="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.IMAGE_NAME }}"
+          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
+          echo "IMAGE_URI=$IMAGE_URI"
+
       - name: Build & Push image
         run: |
-          docker build -t $IMAGE_URI:latest .
-          docker push $IMAGE_URI:latest
+          docker build -t "$IMAGE_URI:latest" .
+          docker push "$IMAGE_URI:latest"
 
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
-      - name: Setup SSH key
+      - name: Write SSH key
         run: |
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > key.pem
           chmod 600 key.pem
 
       - name: Deploy on VM
+        env:
+          IMAGE_URI: ${{ env.IMAGE_URI }}
+          SSH_HOST: ${{ env.SSH_HOST }}
+          SSH_USER: ${{ env.SSH_USER }}
         run: |
-          ssh -o StrictHostKeyChecking=no -i key.pem ${{ env.SSH_USER }}@${{ env.SSH_HOST }} << 'EOF'
+          ssh -o StrictHostKeyChecking=no -i key.pem ${SSH_USER:-ubuntu}@${SSH_HOST} << 'EOF'
             set -e
             cd ~/apps/frontend
             docker compose pull
