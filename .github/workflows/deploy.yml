@@ -44,6 +44,8 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
+      - name: Show who we will connect as
+        run: echo "SSH_USER=${{ env.SSH_USER }}, SSH_HOST=${{ env.SSH_HOST }}"
       - name: Write SSH key
         run: |
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > key.pem
@@ -54,7 +56,7 @@ jobs:
           SSH_HOST: ${{ env.SSH_HOST }}
           SSH_USER: ${{ env.SSH_USER }}
         run: |
-          ssh -o StrictHostKeyChecking=no -i key.pem ${SSH_USER:-ubuntu}@${SSH_HOST} << 'EOF'
+          ssh -o StrictHostKeyChecking=no -i key.pem ${SSH_USER:-ubuntu}@${SSH_HOST} 'echo OK' << 'EOF'
             set -e
             cd ~/apps/frontend
             docker compose pull
