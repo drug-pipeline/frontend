@@ -41,50 +41,50 @@ jobs:
           docker push "$IMAGE_URI:latest"
 
   deploy:
-  needs: build-and-push
-  runs-on: ubuntu-latest
-  steps:
-    - name: Write SSH key (preserve newlines)
-      run: |
-        cat > key.pem << 'EOF'
-        ${{ secrets.SSH_PRIVATE_KEY }}
-        EOF
-        chmod 600 key.pem
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write SSH key (preserve newlines)
+        run: |
+          cat > key.pem << 'EOF'
+          ${{ secrets.SSH_PRIVATE_KEY }}
+          EOF
+          chmod 600 key.pem
 
-    - name: Test SSH (debug)   # 남겨두면 문제 생길 때 유용
-      env:
-        SSH_HOST: ${{ env.SSH_HOST }}
-        SSH_USER: ${{ env.SSH_USER }}
-      run: |
-        ssh -o StrictHostKeyChecking=no -i key.pem ${SSH_USER:-ubuntu}@${SSH_HOST} 'echo OK'
+      - name: Test SSH (debug)   # 남겨두면 문제 생길 때 유용
+        env:
+          SSH_HOST: ${{ env.SSH_HOST }}
+          SSH_USER: ${{ env.SSH_USER }}
+        run: |
+          ssh -o StrictHostKeyChecking=no -i key.pem ${SSH_USER:-ubuntu}@${SSH_HOST} 'echo OK'
 
-    - name: Deploy on VM
-      env:
-        SSH_HOST: ${{ env.SSH_HOST }}
-        SSH_USER: ${{ env.SSH_USER }}
-      run: |
-        ssh -o StrictHostKeyChecking=no -i key.pem ${SSH_USER:-ubuntu}@${SSH_HOST} << 'EOF'
-          set -e
-          mkdir -p ~/apps/frontend
-          cd ~/apps/frontend
+      - name: Deploy on VM
+        env:
+          SSH_HOST: ${{ env.SSH_HOST }}
+          SSH_USER: ${{ env.SSH_USER }}
+        run: |
+          ssh -o StrictHostKeyChecking=no -i key.pem ${SSH_USER:-ubuntu}@${SSH_HOST} << 'EOF'
+            set -e
+            mkdir -p ~/apps/frontend
+            cd ~/apps/frontend
 
-          # docker-compose.yml 없으면 생성(있으면 유지)
-          if [ ! -f docker-compose.yml ]; then
-            cat > docker-compose.yml << 'YAML'
-          services:
-            web:
-              image: asia-northeast3-docker.pkg.dev/nimble-poet-474703-f7/frontend/frontend:latest
-              restart: always
-              ports:
-                - "80:3000"
-              # 필요시 환경변수:
-              # environment:
-              #   - NEXT_PUBLIC_BACKEND_URL=https://<your-backend>
-          YAML
-          fi
+            # docker-compose.yml 없으면 생성(있으면 유지)
+            if [ ! -f docker-compose.yml ]; then
+              cat > docker-compose.yml << 'YAML'
+            services:
+              web:
+                image: asia-northeast3-docker.pkg.dev/nimble-poet-474703-f7/frontend/frontend:latest
+                restart: always
+                ports:
+                  - "80:3000"
+                # 필요시 환경변수:
+                # environment:
+                #   - NEXT_PUBLIC_BACKEND_URL=https://<your-backend>
+            YAML
+            fi
 
-          docker compose pull
-          docker compose up -d
-          docker image prune -f
-          docker compose ps
-        EOF
+            docker compose pull
+            docker compose up -d
+            docker image prune -f
+            docker compose ps
+          EOF
