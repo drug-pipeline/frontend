@@ -1,4 +1,4 @@
-// app/pipeline/edit/page.tsx — explicit sync only (no auto-sync on click)
+// app/pipeline/edit/page.tsx — real API wired (v4: links GET + POST, node inputs GET)
 "use client";
 
 import React, {
@@ -35,19 +35,7 @@ import NodeDetailDock, {
 } from "@/app/components/pipeline2/NodeDetailDock";
 
 /* =========================
- * 모듈 사양 (사이드바용)
- * =======================*/
-type ModuleKey =
-  | "pdb-input"
-  | "compound-input"
-  | "visualizer"
-  | "distance-map"
-  | "admet"
-  | "uniprot-info"
-  | "pdb-info";
-
-/* =========================
- * 서버 NodeDTO & 매핑
+ * 서버 스펙 타입
  * =======================*/
 type NodeStatus = "PENDING" | "RUNNING" | "SUCCESS" | "FAILED";
 
@@ -68,10 +56,56 @@ type ServerNodeDTO = {
   status: NodeStatus;
   x: number;
   y: number;
-  meta?: Record<string, unknown>;
+  metaJson?: string | null;
   createdAt?: string;
   updatedAt?: string;
 };
+
+// 링크 생성/조회 응답
+type CreateLinkBody = {
+  projectId: number;
+  sourceNodeId: number;
+  targetNodeId: number;
+};
+type LinkResponse = {
+  id: number;
+  projectId: number;
+  sourceNodeId: number;
+  targetNodeId: number;
+  createdAt: string; // ISO
+};
+
+type NodeInputDTO = {
+  id: number;
+  nodeId: number;
+  originalName: string;
+  storedPath: string;
+  contentType: string;
+  size: number;
+  createdAt: string; // ISO
+};
+
+type ProjectDTO = {
+  id: number;
+  name: string;
+  createdAt?: string | null;
+};
+
+type NodeLogsDTO = {
+  lines: string[];
+};
+
+/* =========================
+ * 모듈 키 <-> 서버 타입 매핑
+ * =======================*/
+type ModuleKey =
+  | "pdb-input"
+  | "compound-input"
+  | "visualizer"
+  | "distance-map"
+  | "admet"
+  | "uniprot-info"
+  | "pdb-info";
 
 const keyToType: Record<ModuleKey, ServerNodeType> = {
   "pdb-input": "PDB",
@@ -118,19 +152,9 @@ function allowConnection(
 }
 
 /* =========================
- * API
+ * API BASE
  * =======================*/
 const API_BASE = "/api";
-
-type ProjectDTO = {
-  id: number;
-  name: string;
-  createdAt?: string | null;
-};
-
-type NodeLogsDTO = {
-  lines: string[];
-};
 
 /* =========================
  * 간단 모달 컴포넌트
@@ -159,7 +183,58 @@ function SimpleModal(props: {
 }
 
 /* =========================
- * 페이지
+ * 보조 UI: Node Inputs 패널
+ * =======================*/
+function InputsPanel({
+  open,
+  inputs,
+  loading,
+  onRefresh,
+}: {
+  open: boolean;
+  inputs: NodeInputDTO[] | null;
+  loading: boolean;
+  onRefresh: () => void;
+}) {
+  if (!open) return null;
+  return (
+    <div className="pointer-events-auto absolute right-4 top-20 z-[12000] w-[420px] rounded-xl border border-zinc-200 bg-white/95 p-4 shadow-lg backdrop-blur">
+      <div className="mb-2 flex items-center justify-between">
+        <div className="text-sm font-semibold">Node Inputs</div>
+        <button
+          onClick={onRefresh}
+          className="rounded-lg border border-zinc-300 px-2 py-1 text-xs"
+          disabled={loading}
+        >
+          {loading ? "Loading…" : "Refresh"}
+        </button>
+      </div>
+      {(!inputs || inputs.length === 0) && !loading ? (
+        <div className="text-xs text-zinc-500">No inputs.</div>
+      ) : (
+        <ul className="space-y-2">
+          {(inputs ?? []).map((f) => (
+            <li
+              key={f.id}
+              className="rounded-lg border border-zinc-200 p-2 text-xs"
+            >
+              <div className="font-medium">{f.originalName}</div>
+              <div className="text-[11px] text-zinc-500">
+                type={f.contentType} • size={f.size} • createdAt={f.createdAt}
+              </div>
+              <div className="truncate text-[11px] text-zinc-500">
+                {f.storedPath}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/* =========================
+ * 메인 페이지
  * =======================*/
 function PipelinePage() {
   const router = useRouter();
@@ -186,7 +261,7 @@ function PipelinePage() {
   // 서버 노드 로딩 상태
   const [loadingNodes, setLoadingNodes] = useState<boolean>(false);
 
-  // 서버 노드 캐시 (선택 시 즉시 표시)
+  // 서버 노드 캐시
   const [serverNodeMap, setServerNodeMap] = useState<
     Record<string, ServerNodeDTO>
   >({});
@@ -198,12 +273,16 @@ function PipelinePage() {
   const [logs, setLogs] = useState<string[] | null>(null);
   const [refreshingLogs, setRefreshingLogs] = useState<boolean>(false);
 
+  // Node Inputs 상태
+  const [inputs, setInputs] = useState<NodeInputDTO[] | null>(null);
+  const [loadingInputs, setLoadingInputs] = useState<boolean>(false);
+
   // === Rename 모달 상태 ===
   const [renameOpen, setRenameOpen] = useState<boolean>(false);
   const [renameInput, setRenameInput] = useState<string>("");
   const [renaming, setRenaming] = useState<boolean>(false);
 
-  // 이름 로드 (명시적 API 호출)
+  // 프로젝트명 로드
   useEffect(() => {
     const loadName = async () => {
       if (!projectId) return;
@@ -243,40 +322,76 @@ function PipelinePage() {
     };
   }, []);
 
-  // 노드 목록 새로고침 (명시적 API 호출로만 사용)
-  // after
-const refreshNodes = useCallback(async () => {
-  if (!projectId) return;
-  try {
-    setLoadingNodes(true);
-    const res = await fetch(`${API_BASE}/projects/${projectId}/nodes`, { method: "GET" });
-    if (!res.ok) throw new Error(`GET /projects/${projectId}/nodes failed (${res.status})`);
-    const list: ServerNodeDTO[] = await res.json();
+  // 노드 목록 새로고침
+  const refreshNodes = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      setLoadingNodes(true);
+      const res = await fetch(`${API_BASE}/projects/${projectId}/nodes`, {
+        method: "GET",
+      });
+      if (!res.ok)
+        throw new Error(
+          `GET /projects/${projectId}/nodes failed (${res.status})`
+        );
+      const list: ServerNodeDTO[] = await res.json();
 
-    const flowNodes = (list ?? []).map(dtoToFlowNode);
-    setNodes(flowNodes);
+      const flowNodes = (list ?? []).map(dtoToFlowNode);
+      setNodes(flowNodes);
 
-    // 캐시 갱신만 하고, detail/selection에는 손대지 않음
-    const m: Record<string, ServerNodeDTO> = {};
-    for (const n of list) m[String(n.id)] = n;
-    setServerNodeMap(m);
-  } catch (err) {
-    console.error("[Refresh Nodes] error:", err);
-  } finally {
-    setLoadingNodes(false);
-  }
-}, [projectId, dtoToFlowNode, setNodes]);
+      const m: Record<string, ServerNodeDTO> = {};
+      for (const n of list) m[String(n.id)] = n;
+      setServerNodeMap(m);
+    } catch (err) {
+      console.error("[Refresh Nodes] error:", err);
+    } finally {
+      setLoadingNodes(false);
+    }
+  }, [projectId, dtoToFlowNode, setNodes]);
 
+  // 링크 목록 새로고침 (GET /api/projects/{projectId}/links)
+  const refreshLinks = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      const res = await fetch(`${API_BASE}/projects/${projectId}/links`, {
+        method: "GET",
+      });
+      if (!res.ok) {
+        console.error(
+          `[Refresh Links] GET /projects/${projectId}/links -> ${res.status}`
+        );
+        setEdges([]);
+        return;
+      }
+      const list: LinkResponse[] = await res.json();
 
-  // 최초 로드만 수행 (초기 동기화 1회)
-useEffect(() => {
-  if (!projectId) return;
-  // 초기 1회(또는 projectId 변경 시)에만 동기화
-  (async () => { await refreshNodes(); })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [projectId]);  // refreshNodes는 의도적으로 의존하지 않음
+      // 서버 링크 -> React Flow Edge
+      const serverEdges: Edge[] = (list ?? []).map((l) => ({
+        id: String(l.id),
+        source: String(l.sourceNodeId),
+        target: String(l.targetNodeId),
+        animated: true,
+        style: { strokeWidth: 2 },
+      }));
 
-  // 노드 생성 (명시적 API 호출)
+      setEdges(serverEdges);
+    } catch (err) {
+      console.error("[Refresh Links] error:", err);
+      setEdges([]);
+    }
+  }, [projectId, setEdges]);
+
+  // 최초 로드: 노드 -> 링크 순으로 불러오기
+  useEffect(() => {
+    if (!projectId) return;
+    (async () => {
+      await refreshNodes();
+      await refreshLinks();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+
+  // 노드 생성
   const createNode = useCallback(
     async (spec: ModuleSpec) => {
       if (!projectId) {
@@ -291,7 +406,7 @@ useEffect(() => {
         status: "PENDING" as NodeStatus,
         x: Math.round(pos.x),
         y: Math.round(pos.y),
-        meta: {},
+        metaJson: "{}",
       };
 
       try {
@@ -313,13 +428,70 @@ useEffect(() => {
     [projectId, refreshNodes]
   );
 
-  // 엣지 연결 (로컬 상태만)
+  // ===== 링크 생성 (POST /api/projects/{projectId}/links) + 에지 추가 =====
+  const postLinkAndAddEdge = useCallback(
+    async (conn: Connection | Edge) => {
+      if (!projectId) return;
+      const sourceId = conn.source;
+      const targetId = conn.target;
+      if (!sourceId || !targetId) return;
+
+      // 유효성 체크
+      const source = nodes.find((n) => n.id === sourceId);
+      const target = nodes.find((n) => n.id === targetId);
+      if (!allowConnection(source, target)) return;
+
+      // 서버에 링크 생성
+      try {
+        const body: CreateLinkBody = {
+          projectId,
+          sourceNodeId: Number(sourceId),
+          targetNodeId: Number(targetId),
+        };
+        const res = await fetch(`${API_BASE}/projects/${projectId}/links`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          console.error("[Create Link] failed:", res.status);
+          alert(`링크 생성 실패 (${res.status}).`);
+          return;
+        }
+        const created: LinkResponse = await res.json().catch(() => ({
+          id: -1,
+          projectId,
+          sourceNodeId: Number(sourceId),
+          targetNodeId: Number(targetId),
+          createdAt: new Date().toISOString(),
+        }));
+
+        // 로컬 에지 반영 (즉시 반영)
+        setEdges((eds) =>
+          addEdge(
+            {
+              ...conn,
+              id: String(created.id), // 서버 id 사용
+              animated: true,
+              style: { strokeWidth: 2 },
+            } as any,
+            eds
+          )
+        );
+      } catch (err) {
+        console.error("[Create Link] error:", err);
+        alert("링크 생성 중 오류가 발생했습니다.");
+      }
+    },
+    [projectId, nodes, setEdges]
+  );
+
+  // React Flow onConnect 핸들러
   const onConnect = useCallback(
-    (params: Edge | Connection) =>
-      setEdges((eds) =>
-        addEdge({ ...params, animated: true, style: { strokeWidth: 2 } }, eds)
-      ),
-    [setEdges]
+    async (params: Connection | Edge) => {
+      await postLinkAndAddEdge(params);
+    },
+    [postLinkAndAddEdge]
   );
 
   const isValidConnection = useCallback(
@@ -331,7 +503,7 @@ useEffect(() => {
     [nodes]
   );
 
-  // Header 동작 (명시적 Save — 현재는 콘솔 저장)
+  // Header 동작 (명시적 Save — 현재는 콘솔)
   const onSave = useCallback(() => {
     const payload = {
       name: workflowName,
@@ -425,23 +597,20 @@ useEffect(() => {
     }
   }, [projectId, workflowName, router]);
 
-  // 상세 1건 재로딩 (명시적 버튼)
+  // 상세 1건 재로딩
   const reloadDetail = useCallback(
     async (nodeId: string) => {
       if (!projectId || !nodeId) return;
       setReloadingDetail(true);
       try {
-        const res = await fetch(
-          `${API_BASE}/projects/${projectId}/nodes/${nodeId}`,
-          {
-            method: "GET",
-          }
-        );
-        if (!res.ok) throw new Error(`GET node ${nodeId} failed (${res.status})`);
+        const res = await fetch(`${API_BASE}/nodes/${nodeId}`, {
+          method: "GET",
+        });
+        if (!res.ok)
+          throw new Error(`GET node ${nodeId} failed (${res.status})`);
         const dto: ServerNodeDTO = await res.json();
 
         setDetailNode(dto);
-        // 캐시도 갱신
         setServerNodeMap((prev) => ({ ...prev, [String(dto.id)]: dto }));
       } catch (err) {
         console.error("[Reload Node Detail] error:", err);
@@ -452,7 +621,7 @@ useEffect(() => {
     [projectId]
   );
 
-  // 로그 로드 (명시적 버튼)
+  // 로그 로드 (명시적 버튼) — 서버 미구현 시 404 graceful
   const loadNodeLogs = useCallback(
     async (nodeId: string) => {
       if (!projectId || !nodeId) return;
@@ -493,18 +662,46 @@ useEffect(() => {
     [projectId]
   );
 
-  // 선택 변경 → 네트워크 호출 없이 캐시로만 표시
+  // === 노드 입력 파일 로드 (GET /api/projects/{projectId}/nodes/{nodeId}/inputs) ===
+  const loadNodeInputs = useCallback(
+    async (nodeId: string) => {
+      if (!projectId || !nodeId) return;
+      setLoadingInputs(true);
+      try {
+        const res = await fetch(
+          `${API_BASE}/projects/${projectId}/nodes/${nodeId}/inputs`,
+          { method: "GET" }
+        );
+        if (!res.ok) {
+          console.error(`[Load Node Inputs] ${nodeId} -> ${res.status}`);
+          setInputs([]);
+          return;
+        }
+        const list: NodeInputDTO[] = await res.json();
+        setInputs(Array.isArray(list) ? list : []);
+      } catch (err) {
+        console.error("[Load Node Inputs] error:", err);
+        setInputs([]);
+      } finally {
+        setLoadingInputs(false);
+      }
+    },
+    [projectId]
+  );
+
+  // 선택 변경 → 캐시로 표시 + inputs 초기화
   const onSelectionChange = useCallback(
     (params: OnSelectionChangeParams) => {
       const id = params.nodes?.[0]?.id ?? null;
       setSelectedNodeId(id);
       setLogs(null);
-      setDetailNode(id ? serverNodeMap[id] ?? null : null); // 캐시 사용, 클릭만으로는 동기화하지 않음
+      setInputs(null);
+      setDetailNode(id ? serverNodeMap[id] ?? null : null);
     },
     [serverNodeMap]
   );
 
-  // 이름 변경 저장 (명시적 API 호출) — 노드용
+  // 이름 변경 저장
   const renameSelectedNode = useCallback(
     async (newName: string) => {
       const id = selectedNodeId;
@@ -517,8 +714,8 @@ useEffect(() => {
           body: JSON.stringify({ name: newName }),
         });
         if (!res.ok) throw new Error(`PUT node ${id} failed (${res.status})`);
-        // 명시적 동기화: 목록/캐시 갱신
         await refreshNodes();
+        await refreshLinks(); // 위치 변경 등으로 인한 edge 재구성 대비
       } catch (err) {
         console.error("[Rename Node] error:", err);
         alert("이름 변경에 실패했습니다.");
@@ -526,7 +723,7 @@ useEffect(() => {
         setSavingNode(false);
       }
     },
-    [projectId, selectedNodeId, refreshNodes]
+    [projectId, selectedNodeId, refreshNodes, refreshLinks]
   );
 
   // === 워크플로우명 변경 ===
@@ -563,7 +760,6 @@ useEffect(() => {
     }
   }, [projectId, renameInput]);
 
-  // (줌 고정) 초기 뷰포트만 지정
   const defaultViewport = { x: 0, y: 0, zoom: 1 };
 
   return (
@@ -592,7 +788,7 @@ useEffect(() => {
         <ModuleSidebar modules={MODULES} onCreate={createNode} />
 
         <main className="relative">
-          {/* 로딩 오버레이 (명시적 동기화 때만 표시) */}
+          {/* 로딩 오버레이 */}
           {loadingNodes && (
             <div className="absolute inset-0 z-10 grid place-items-center bg-white/50 text-xs text-zinc-600">
               Syncing nodes…
@@ -650,6 +846,16 @@ useEffect(() => {
             reloadingDetail={reloadingDetail}
           />
 
+          {/* Node Inputs 패널 */}
+          <InputsPanel
+            open={!!selectedNodeId}
+            inputs={inputs}
+            loading={loadingInputs}
+            onRefresh={() => {
+              if (selectedNodeId) loadNodeInputs(selectedNodeId);
+            }}
+          />
+
           {/* 워크플로우 이름 변경 모달 */}
           <SimpleModal
             open={renameOpen}
@@ -687,7 +893,7 @@ useEffect(() => {
         </main>
       </div>
 
-      {/* 하이라이트 시 디밍 효과 (캔버스 전체에 적용) */}
+      {/* 하이라이트 시 디밍 효과 */}
       <style>{`
         .selection-has-node .react-flow__node { transition: filter 120ms ease, opacity 120ms ease; }
       `}</style>
