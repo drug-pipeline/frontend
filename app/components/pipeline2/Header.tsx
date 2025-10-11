@@ -67,7 +67,8 @@ export default function Header({
 
     return (
         <header className="border-b border-zinc-200 bg-white/70 backdrop-blur">
-            <div className="mx-auto max-w-7xl h-14 px-4 flex items-center justify-between">
+            <div className="h-14 w-full px-4 md:px-6 lg:px-6 flex items-center justify-between">
+
                 <div className="flex items-center gap-3">
                     {/* 뒤로가기 → /pipeline */}
                     <Link
