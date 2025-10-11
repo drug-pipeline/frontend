@@ -256,12 +256,37 @@ export default function PipelineHomePage() {
 
                         <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
                             <Link
-                                href="/pipeline/edit?mode=new"
-                                className="inline-flex items-center gap-2 rounded-xl bg-black px-5 py-3 text-sm font-medium text-white hover:bg-zinc-900 active:bg-zinc-800"
-                            >
-                                <HiPlus className="h-5 w-5" />
-                                Create
-                            </Link>
+  href="#"
+  onClick={async (e) => {
+    e.preventDefault();
+    try {
+      const res = await fetch("http://34.61.162.19/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Kinase Inhibitor Discovery" }),
+      });
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      console.log("✅ Project created:", data);
+
+      // 생성 성공 시 /pipeline/edit?id=프로젝트ID 로 이동
+      if (data.id) {
+        window.location.href = `/pipeline/edit?id=${data.id}`;
+      } else {
+        alert("Project created but no ID returned.");
+      }
+    } catch (err) {
+      console.error("❌ Failed to create project:", err);
+      alert("Project creation failed. Check the backend logs.");
+    }
+  }}
+  className="inline-flex items-center gap-2 rounded-xl bg-black px-5 py-3 text-sm font-medium text-white hover:bg-zinc-900 active:bg-zinc-800"
+>
+  <HiPlus className="h-5 w-5" />
+  Create
+</Link>
+
 
                             {/* 템플릿 찾기 버튼 (히어로) */}
                             <button
