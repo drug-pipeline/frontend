@@ -1,6 +1,8 @@
+// app/pipeline/edit/page.tsx
+
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import ReactFlow, {
   Background,
   Controls,
@@ -191,9 +193,9 @@ type ProjectDTO = {
 };
 
 /* =========================
- * 페이지
+ * 실제 페이지(클라이언트, 훅 사용)
  * =======================*/
-export default function PipelinePage() {
+function PipelinePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const projectId = useMemo(() => {
@@ -367,7 +369,6 @@ export default function PipelinePage() {
       const created: ProjectDTO = await postRes.json().catch(() => ({ id: -1, name: nameForCopy }));
 
       alert(`프로젝트가 복제되었습니다.\n[${created.name}] (id: ${created.id ?? "?"})`);
-      // 원하면 created.id로 이동:
       // if (created.id && created.id > 0) router.push(`/pipeline?page=...&id=${created.id}`);
     } catch (err) {
       console.error("[Duplicate Project] error:", err);
@@ -495,5 +496,24 @@ export default function PipelinePage() {
         </div>
       </Modal>
     </div>
+  );
+}
+
+/* =========================
+ * 페이지 export: Suspense 경계로 감싸기
+ * =======================*/
+function PageFallback() {
+  return (
+    <div className="grid min-h-screen place-items-center text-sm text-zinc-500">
+      Loading…
+    </div>
+  );
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={<PageFallback />}>
+      <PipelinePage />
+    </Suspense>
   );
 }
