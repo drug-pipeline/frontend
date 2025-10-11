@@ -218,8 +218,9 @@ function PipelinePage() {
   const [renameInput, setRenameInput] = useState<string>("");
   const [renaming, setRenaming] = useState<boolean>(false);
 
-  // === Visualizer 모달 상태 ===
+  // === Visualizer 모달 & 소스 파일 URL 상태 ===
   const [vizOpen, setVizOpen] = useState<boolean>(false);
+  const [vizSrc, setVizSrc] = useState<string | null>(null);
 
   // NGL viewer state (타입 충돌 방지를 위해 any)
   const [viewerStage, setViewerStage] = useState<any>(null);
@@ -749,15 +750,17 @@ function PipelinePage() {
               await refreshNodes();
               await refreshLinks();
             }}
-            onOpenVisualizer={() => setVizOpen(true)}
+            onOpenVisualizer={(url) => {
+              setVizSrc(url || null);
+              setVizOpen(true);
+            }}
           />
 
           {/* Visualizer 모달 (NGL) */}
           <SimpleModal open={vizOpen} title="Visualizer" onClose={() => setVizOpen(false)} wide>
             <div className="h-[calc(100%-1.5rem)]">
-              {/* NGL 뷰어 영역 (full fill) */}
               <div className="relative h-full w-full">
-                <NglWebapp viewer={viewerProp as any} />
+                <NglWebapp viewer={viewerProp as any} pdbUrl={vizSrc ?? undefined} />
               </div>
             </div>
           </SimpleModal>
