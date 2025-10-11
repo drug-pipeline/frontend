@@ -1,4 +1,4 @@
-// app/pipeline/edit/page.tsx — real API wired (v4: links GET + POST, node inputs GET)
+// app/pipeline/edit/page.tsx — real API wired (v5: Links GET+POST, Node Inputs 제거)
 "use client";
 
 import React, {
@@ -72,16 +72,6 @@ type LinkResponse = {
   projectId: number;
   sourceNodeId: number;
   targetNodeId: number;
-  createdAt: string; // ISO
-};
-
-type NodeInputDTO = {
-  id: number;
-  nodeId: number;
-  originalName: string;
-  storedPath: string;
-  contentType: string;
-  size: number;
   createdAt: string; // ISO
 };
 
@@ -183,57 +173,6 @@ function SimpleModal(props: {
 }
 
 /* =========================
- * 보조 UI: Node Inputs 패널
- * =======================*/
-function InputsPanel({
-  open,
-  inputs,
-  loading,
-  onRefresh,
-}: {
-  open: boolean;
-  inputs: NodeInputDTO[] | null;
-  loading: boolean;
-  onRefresh: () => void;
-}) {
-  if (!open) return null;
-  return (
-    <div className="pointer-events-auto absolute right-4 top-20 z-[12000] w-[420px] rounded-xl border border-zinc-200 bg-white/95 p-4 shadow-lg backdrop-blur">
-      <div className="mb-2 flex items-center justify-between">
-        <div className="text-sm font-semibold">Node Inputs</div>
-        <button
-          onClick={onRefresh}
-          className="rounded-lg border border-zinc-300 px-2 py-1 text-xs"
-          disabled={loading}
-        >
-          {loading ? "Loading…" : "Refresh"}
-        </button>
-      </div>
-      {(!inputs || inputs.length === 0) && !loading ? (
-        <div className="text-xs text-zinc-500">No inputs.</div>
-      ) : (
-        <ul className="space-y-2">
-          {(inputs ?? []).map((f) => (
-            <li
-              key={f.id}
-              className="rounded-lg border border-zinc-200 p-2 text-xs"
-            >
-              <div className="font-medium">{f.originalName}</div>
-              <div className="text-[11px] text-zinc-500">
-                type={f.contentType} • size={f.size} • createdAt={f.createdAt}
-              </div>
-              <div className="truncate text-[11px] text-zinc-500">
-                {f.storedPath}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-/* =========================
  * 메인 페이지
  * =======================*/
 function PipelinePage() {
@@ -272,10 +211,6 @@ function PipelinePage() {
   const [reloadingDetail, setReloadingDetail] = useState<boolean>(false);
   const [logs, setLogs] = useState<string[] | null>(null);
   const [refreshingLogs, setRefreshingLogs] = useState<boolean>(false);
-
-  // Node Inputs 상태
-  const [inputs, setInputs] = useState<NodeInputDTO[] | null>(null);
-  const [loadingInputs, setLoadingInputs] = useState<boolean>(false);
 
   // === Rename 모달 상태 ===
   const [renameOpen, setRenameOpen] = useState<boolean>(false);
@@ -662,40 +597,12 @@ function PipelinePage() {
     [projectId]
   );
 
-  // === 노드 입력 파일 로드 (GET /api/projects/{projectId}/nodes/{nodeId}/inputs) ===
-  const loadNodeInputs = useCallback(
-    async (nodeId: string) => {
-      if (!projectId || !nodeId) return;
-      setLoadingInputs(true);
-      try {
-        const res = await fetch(
-          `${API_BASE}/projects/${projectId}/nodes/${nodeId}/inputs`,
-          { method: "GET" }
-        );
-        if (!res.ok) {
-          console.error(`[Load Node Inputs] ${nodeId} -> ${res.status}`);
-          setInputs([]);
-          return;
-        }
-        const list: NodeInputDTO[] = await res.json();
-        setInputs(Array.isArray(list) ? list : []);
-      } catch (err) {
-        console.error("[Load Node Inputs] error:", err);
-        setInputs([]);
-      } finally {
-        setLoadingInputs(false);
-      }
-    },
-    [projectId]
-  );
-
-  // 선택 변경 → 캐시로 표시 + inputs 초기화
+  // 선택 변경 → 캐시로 표시
   const onSelectionChange = useCallback(
     (params: OnSelectionChangeParams) => {
       const id = params.nodes?.[0]?.id ?? null;
       setSelectedNodeId(id);
       setLogs(null);
-      setInputs(null);
       setDetailNode(id ? serverNodeMap[id] ?? null : null);
     },
     [serverNodeMap]
@@ -715,7 +622,7 @@ function PipelinePage() {
         });
         if (!res.ok) throw new Error(`PUT node ${id} failed (${res.status})`);
         await refreshNodes();
-        await refreshLinks(); // 위치 변경 등으로 인한 edge 재구성 대비
+        await refreshLinks(); // edge 재구성 대비
       } catch (err) {
         console.error("[Rename Node] error:", err);
         alert("이름 변경에 실패했습니다.");
@@ -844,16 +751,6 @@ function PipelinePage() {
               if (selectedNodeId) reloadDetail(selectedNodeId);
             }}
             reloadingDetail={reloadingDetail}
-          />
-
-          {/* Node Inputs 패널 */}
-          <InputsPanel
-            open={!!selectedNodeId}
-            inputs={inputs}
-            loading={loadingInputs}
-            onRefresh={() => {
-              if (selectedNodeId) loadNodeInputs(selectedNodeId);
-            }}
           />
 
           {/* 워크플로우 이름 변경 모달 */}
