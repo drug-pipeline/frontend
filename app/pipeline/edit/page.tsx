@@ -244,41 +244,37 @@ function PipelinePage() {
   }, []);
 
   // 노드 목록 새로고침 (명시적 API 호출로만 사용)
-  const refreshNodes = useCallback(async () => {
-    if (!projectId) return;
-    try {
-      setLoadingNodes(true);
-      const res = await fetch(`${API_BASE}/projects/${projectId}/nodes`, {
-        method: "GET",
-      });
-      if (!res.ok)
-        throw new Error(
-          `GET /projects/${projectId}/nodes failed (${res.status})`
-        );
-      const list: ServerNodeDTO[] = await res.json();
-      const flowNodes = (list ?? []).map(dtoToFlowNode);
-      setNodes(flowNodes);
-      // 캐시 갱신
-      const m: Record<string, ServerNodeDTO> = {};
-      for (const n of list) m[String(n.id)] = n;
-      setServerNodeMap(m);
+  // after
+const refreshNodes = useCallback(async () => {
+  if (!projectId) return;
+  try {
+    setLoadingNodes(true);
+    const res = await fetch(`${API_BASE}/projects/${projectId}/nodes`, { method: "GET" });
+    if (!res.ok) throw new Error(`GET /projects/${projectId}/nodes failed (${res.status})`);
+    const list: ServerNodeDTO[] = await res.json();
 
-      // 선택된 노드가 있으면 캐시로 detail도 즉시 갱신 (네트워크 X)
-      if (selectedNodeId) {
-        setDetailNode(m[selectedNodeId] ?? null);
-      }
-    } catch (err) {
-      console.error("[Refresh Nodes] error:", err);
-    } finally {
-      setLoadingNodes(false);
-    }
-  }, [projectId, dtoToFlowNode, setNodes, selectedNodeId]);
+    const flowNodes = (list ?? []).map(dtoToFlowNode);
+    setNodes(flowNodes);
+
+    // 캐시 갱신만 하고, detail/selection에는 손대지 않음
+    const m: Record<string, ServerNodeDTO> = {};
+    for (const n of list) m[String(n.id)] = n;
+    setServerNodeMap(m);
+  } catch (err) {
+    console.error("[Refresh Nodes] error:", err);
+  } finally {
+    setLoadingNodes(false);
+  }
+}, [projectId, dtoToFlowNode, setNodes]);
+
 
   // 최초 로드만 수행 (초기 동기화 1회)
-  useEffect(() => {
-    if (!projectId) return;
-    refreshNodes();
-  }, [projectId, refreshNodes]);
+useEffect(() => {
+  if (!projectId) return;
+  // 초기 1회(또는 projectId 변경 시)에만 동기화
+  (async () => { await refreshNodes(); })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [projectId]);  // refreshNodes는 의도적으로 의존하지 않음
 
   // 노드 생성 (명시적 API 호출)
   const createNode = useCallback(
