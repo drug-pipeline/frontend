@@ -7,7 +7,6 @@ import {
   FiEdit2,
   FiSave,
   FiUpload,
-  FiTrash2,
   FiClock,
   FiActivity,
   FiCheckCircle,
@@ -21,7 +20,7 @@ export type MinimalNodeDTO = {
   id: number;
   name: string;
   status: NodeStatus;
-  type: string; // 서버 enum 문자열 그대로 노출
+  type: string; // 서버 enum 문자열 그대로 노출 (ex: PDB, VISUALIZER)
   x: number;
   y: number;
 };
@@ -38,7 +37,7 @@ type NodeFileDTO = {
 
 const API_BASE = "/api";
 
-/* 상태별 스타일/아이콘 (NodeCard와 UI 일관) */
+/* 상태별 스타일/아이콘 */
 const statusStyle = (status: NodeStatus) => {
   switch (status) {
     case "PENDING":
@@ -74,6 +73,12 @@ type Props = {
   refreshingLogs: boolean;
   onReloadDetail: () => void;
   reloadingDetail: boolean;
+
+  /** 추가: 프로젝트 컨텍스트 (상태 업데이트용 PUT 경로에 필요) */
+  projectId: number | undefined;
+
+  /** 추가: 노드 상태 변경 후 상위에서 nodes/edges 다시 불러오게 */
+  onRequestRefreshNodes: () => void;
 };
 
 function formatBytes(bytes: number): string {
@@ -98,6 +103,8 @@ export default function NodeDetailDock({
   refreshingLogs,
   onReloadDetail,
   reloadingDetail,
+  projectId,
+  onRequestRefreshNodes,
 }: Props) {
   const [editMode, setEditMode] = useState(false);
   const [localName, setLocalName] = useState(node?.name ?? "");
@@ -126,6 +133,26 @@ export default function NodeDetailDock({
     }
   }, [nodeId]);
 
+  /** 추가: PDB 노드 상태를 SUCCESS로 승격 */
+  const markPdbSuccess = useCallback(async () => {
+    if (!projectId || !nodeId || !node) return;
+    if (node.type !== "PDB") return; // PDB에만 적용
+    try {
+      const res = await fetch(`${API_BASE}/projects/${projectId}/nodes/${nodeId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "SUCCESS" }),
+      });
+      if (!res.ok) {
+        console.error("[PDB->SUCCESS] PUT failed:", res.status);
+        return;
+      }
+      onRequestRefreshNodes(); // 상위에서 nodes/edges 재로딩
+    } catch (e) {
+      console.error("[PDB->SUCCESS] error:", e);
+    }
+  }, [projectId, nodeId, node, onRequestRefreshNodes]);
+
   const uploadFiles = useCallback(
     async (fileList: FileList | File[]) => {
       if (!nodeId) return;
@@ -134,21 +161,23 @@ export default function NodeDetailDock({
 
       setUploading(true);
       try {
-        // 순차 업로드(서버 로그/부하 확인 쉽도록). 병렬 원하면 Promise.all로 변경 가능
         for (const f of arr) {
           const fd = new FormData();
-          // 서버에서 @RequestPart("file") 사용하므로 필드명은 반드시 "file"
-          fd.append("file", f, f.name);
+          fd.append("file", f, f.name); // 서버 @RequestPart("file")
           const res = await fetch(`${API_BASE}/nodes/${nodeId}/files`, {
             method: "POST",
             body: fd,
           });
           if (!res.ok) {
             console.error("[Upload] failed:", f.name, res.status);
-            // 하나 실패해도 나머지 진행
           }
         }
         await loadFiles();
+
+        // 업로드가 1개 이상 성공했다고 가정하고, PDB 타입이면 SUCCESS로 승격
+        if (node?.type === "PDB") {
+          await markPdbSuccess();
+        }
       } catch (err) {
         console.error("[Upload] error:", err);
       } finally {
@@ -156,7 +185,7 @@ export default function NodeDetailDock({
         if (inputRef.current) inputRef.current.value = "";
       }
     },
-    [nodeId, loadFiles]
+    [nodeId, node?.type, loadFiles, markPdbSuccess]
   );
 
   // 노드가 바뀌거나 도크가 열리면 파일 목록 새로고침
@@ -315,12 +344,6 @@ export default function NodeDetailDock({
                     <div className="truncate text-[10px] text-zinc-500">
                       {f.contentType || "unknown"} • {formatBytes(f.size)} • {new Date(f.createdAt).toLocaleString()}
                     </div>
-                  </div>
-                  {/* 삭제/다운로드 등은 아직 요구 없음. 자리만 남겨둠 */}
-                  <div className="ml-2 shrink-0">
-                    {/* <button className="inline-flex items-center gap-1 rounded border border-zinc-300 px-1.5 py-0.5 text-[10px] hover:bg-zinc-100">
-                      <FiTrash2 /> Remove
-                    </button> */}
                   </div>
                 </li>
               ))}

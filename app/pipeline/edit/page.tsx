@@ -334,6 +334,10 @@ function PipelinePage() {
         return;
       }
       const pos = { x: 140 + Math.random() * 520, y: 100 + Math.random() * 360 };
+
+      const nameForNode =
+        spec.key === "visualizer" ? "Visualizer" : spec.title;
+
       const payload = {
         projectId,
         type: keyToType[spec.key],
@@ -400,6 +404,39 @@ function PipelinePage() {
           targetNodeId: Number(targetId),
           createdAt: new Date().toISOString(),
         }));
+
+        // postLinkAndAddEdge 내부, 서버에 링크 생성 성공 후 (setEdges 호출 뒤나 전에) 추가:
+        try {
+          const s = serverNodeMap[String(sourceId)];
+          const t = serverNodeMap[String(targetId)];
+
+          const isVisualizerPdbPair =
+            (s?.type === "VISUALIZER" && t?.type === "PDB" && t?.status === "SUCCESS") ||
+            (t?.type === "VISUALIZER" && s?.type === "PDB" && s?.status === "SUCCESS");
+
+          if (isVisualizerPdbPair && projectId) {
+            // Visualizer 쪽 id 찾기
+            const vizId =
+              s?.type === "VISUALIZER" ? s.id : t?.type === "VISUALIZER" ? t.id : undefined;
+            if (vizId) {
+              const res2 = await fetch(`${API_BASE}/projects/${projectId}/nodes/${vizId}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ status: "SUCCESS" }),
+              });
+              if (!res2.ok) {
+                console.error("[Visualizer->SUCCESS] PUT failed:", res2.status);
+              } else {
+                // UI 갱신
+                await refreshNodes();
+                await refreshLinks();
+              }
+            }
+          }
+        } catch (e) {
+          console.error("[Post-link Visualizer SUCCESS sync] error:", e);
+        }
+
 
         // 로컬 에지 반영 (즉시 반영)
         setEdges((eds) =>
@@ -708,16 +745,16 @@ function PipelinePage() {
               nodes={
                 selectedNodeId
                   ? nodes.map((n) =>
-                      n.id === selectedNodeId
-                        ? n
-                        : {
-                            ...n,
-                            style: {
-                              opacity: 0.9,
-                              filter: "grayscale(0.12) brightness(0.98)",
-                            },
-                          }
-                    )
+                    n.id === selectedNodeId
+                      ? n
+                      : {
+                        ...n,
+                        style: {
+                          opacity: 0.9,
+                          filter: "grayscale(0.12) brightness(0.98)",
+                        },
+                      }
+                  )
                   : nodes
               }
               edges={edges}
@@ -751,7 +788,13 @@ function PipelinePage() {
               if (selectedNodeId) reloadDetail(selectedNodeId);
             }}
             reloadingDetail={reloadingDetail}
+            projectId={projectId}                      // ← 추가
+            onRequestRefreshNodes={async () => {       // ← 추가 (PDB SUCCESS 반영 후 갱신)
+              await refreshNodes();
+              await refreshLinks();
+            }}
           />
+
 
           {/* 워크플로우 이름 변경 모달 */}
           <SimpleModal
