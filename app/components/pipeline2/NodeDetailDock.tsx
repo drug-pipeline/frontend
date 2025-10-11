@@ -1,6 +1,18 @@
 // app/components/pipeline2/NodeDetailDock.tsx
 "use client";
 
+/**
+ * 변경 요약
+ * - "Visualizer 보기", "Secondary 보기" 클릭 시 이 컴포넌트 내부 모달에서 바로 렌더링
+ * - NGL은 전역 CSS를 쓰지 않는 NglViewerLite로 교체 → 화면 전체 글씨 회색 문제 방지
+ * - 기존 onOpenVisualizer/onOpenSecondary prop 없이도 동작하도록 optional 처리
+ * - 입력 파일 Fetch → 첫 번째 파일을 /api/nodes/{fileId}/content 로 스트리밍하여 NGL에 로드
+ * - 나머지 UI/업로드/로그 등 기존 기능 유지
+ */
+
+import dynamic from "next/dynamic";
+const NglViewerLite = dynamic(() => import("../NglViewerLite"), { ssr: false });
+import SecondaryStructurePanel from "../SecondaryStructurePanel";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FiRefreshCw,
@@ -53,11 +65,13 @@ type Props = {
   projectId: number | null;
 
   onRequestRefreshNodes: () => Promise<void>;
-  onOpenVisualizer: () => void;
-  onOpenSecondary: () => void;
+
+  /** 기존 코드 호환용(사용 안해도 동작). */
+  onOpenVisualizer?: () => void;
+  onOpenSecondary?: () => void;
 };
 
-/* 업로드/파일 DTO */
+/** 업로드/파일 DTO */
 type NodeFileDTO = {
   id: number;
   nodeId: number;
@@ -70,7 +84,7 @@ type NodeFileDTO = {
 
 const API_BASE = "/api";
 
-/* 상태별 스타일/아이콘 */
+/** 상태 뱃지 스타일 */
 const statusStyle = (status: NodeStatus) => {
   switch (status) {
     case "PENDING":
@@ -108,28 +122,36 @@ export default function NodeDetailDock({
   reloadingDetail,
   projectId,
   onRequestRefreshNodes,
-  onOpenVisualizer,
-  onOpenSecondary,
 }: Props) {
   const [editMode, setEditMode] = useState(false);
   const [localName, setLocalName] = useState(node?.name ?? "");
 
-  // ---- 파일 목록/업로드 상태 (PDB 등 일반 노드에서만 사용) ----
+  // 일반 노드 파일 목록/업로드
   const [files, setFiles] = useState<NodeFileDTO[] | null>(null);
   const [loadingFiles, setLoadingFiles] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  // ---- 시각화 입력 fetch 상태 (Visualizer/Secondary 공통) ----
+  // 시각화용 입력 파일(Visualizer/Secondary 공통)
   const [inputFetching, setInputFetching] = useState(false);
   const [inputFiles, setInputFiles] = useState<NodeFileDTO[] | null>(null);
   const [inputResult, setInputResult] = useState<NodeStatus | null>(null); // SUCCESS / FAILED
+
+  // 모달 상태(내부 구현으로 변경)
+  const [showVisualizer, setShowVisualizer] = useState(false);
+  const [showSecondary, setShowSecondary] = useState(false);
 
   const nodeId = node?.id;
   const isVisualizer = node?.type === "VISUALIZER";
   const isSecondary = node?.type === "SECONDARY";
 
-  /** 일반 노드: 자기 자신의 파일 목록 */
+  const [secStage, setSecStage] = useState<any>(null);
+const [secComp, setSecComp] = useState<any>(null);
+const [secDefaultRep, setSecDefaultRep] = useState<any>(null);
+const [secHighlightRep, setSecHighlightRep] = useState<any>(null);
+const [secLastSele, setSecLastSele] = useState<string | null>(null);
+
+
+  /** 자기 자신의 파일 목록 가져오기 (PDB 등 일반 노드) */
   const loadFiles = useCallback(async () => {
     if (!nodeId) return;
     setLoadingFiles(true);
@@ -146,7 +168,7 @@ export default function NodeDetailDock({
     }
   }, [nodeId]);
 
-  /** 일반 노드: 파일 업로드 */
+  /** 업로드 후 PDB 노드는 SUCCESS로 표시 */
   const markPdbSuccess = useCallback(async () => {
     if (!projectId || !nodeId) return;
     try {
@@ -161,32 +183,30 @@ export default function NodeDetailDock({
     }
   }, [projectId, nodeId, onRequestRefreshNodes]);
 
+  /** 파일 업로드 */
   const onUpload = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file || !nodeId) return;
-      setUploading(true);
       try {
         const fd = new FormData();
         fd.append("file", file);
         const res = await fetch(`${API_BASE}/nodes/${nodeId}/files`, { method: "POST", body: fd });
         if (!res.ok) throw new Error(String(res.status));
         await loadFiles();
-        // 업로드 성공 시 PDB 노드는 SUCCESS로
         if (node?.type === "PDB") {
           await markPdbSuccess();
         }
       } catch (err) {
         console.error("[Upload] error:", err);
       } finally {
-        setUploading(false);
         if (inputRef.current) inputRef.current.value = "";
       }
     },
     [nodeId, node?.type, loadFiles, markPdbSuccess]
   );
 
-  /** 시각화/세컨더리: 입력(fetch) */
+  /** 시각화 입력 파일 fetch (Visualizer/Secondary 공통) */
   const fetchInputs = useCallback(async () => {
     if (!nodeId || !projectId) return;
     setInputFetching(true);
@@ -203,7 +223,7 @@ export default function NodeDetailDock({
       setInputFiles(ok ? arr : []);
       setInputResult(ok ? "SUCCESS" : "FAILED");
 
-      // 노드 상태 반영(선택)
+      // (선택) 노드 상태 동기화
       try {
         await fetch(`${API_BASE}/projects/${projectId}/nodes/${nodeId}`, {
           method: "PUT",
@@ -211,7 +231,7 @@ export default function NodeDetailDock({
           body: JSON.stringify({ status: ok ? "SUCCESS" : "FAILED" }),
         });
         await onRequestRefreshNodes();
-      } catch {}
+      } catch { }
     } catch (e) {
       console.error("[fetch inputs] error:", e);
       setInputResult("FAILED");
@@ -220,10 +240,10 @@ export default function NodeDetailDock({
     }
   }, [nodeId, projectId, onRequestRefreshNodes]);
 
-  /** 파일 스트리밍 URL */
+  /** 파일 컨텐츠 스트리밍 URL */
   const contentUrlOf = useCallback((fileId: number) => `${API_BASE}/nodes/${fileId}/content`, []);
 
-  /** 이름 변경 */
+  /** 이름 변경 저장 */
   const saveRename = useCallback(async () => {
     if (!node || !localName.trim()) return;
     try {
@@ -239,9 +259,12 @@ export default function NodeDetailDock({
   if (!open || !node) return null;
 
   const st = statusStyle(node.status);
+  const firstFile = inputFiles && inputFiles.length > 0 ? inputFiles[0] : null;
+  const canOpenModal = inputResult === "SUCCESS" && !!firstFile;
 
   return (
     <aside className="absolute right-3 top-3 z-20 w-[360px] overflow-hidden rounded-2xl bg-white shadow-lg ring-1 ring-zinc-300/70">
+      {/* 헤더 */}
       <div className="border-b border-zinc-200 bg-zinc-50/60 px-3 py-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-sm font-semibold text-zinc-800">
@@ -264,7 +287,7 @@ export default function NodeDetailDock({
             <button
               onClick={onReloadDetail}
               className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-60"
-              title="Reload latest from server"
+              title="서버 최신 내용으로 갱신"
               disabled={reloadingDetail}
             >
               <FiRefreshCw className={reloadingDetail ? "animate-spin" : ""} />
@@ -275,7 +298,7 @@ export default function NodeDetailDock({
               <button
                 className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50"
                 onClick={() => setEditMode(true)}
-                title="Rename"
+                title="이름 변경"
               >
                 <FiEdit2 />
                 Rename
@@ -285,7 +308,7 @@ export default function NodeDetailDock({
                 className="inline-flex items-center gap-1 rounded-md bg-indigo-600 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
                 onClick={saveRename}
                 disabled={saving}
-                title="Save name"
+                title="이름 저장"
               >
                 <FiSave />
                 Save
@@ -315,7 +338,7 @@ export default function NodeDetailDock({
           </div>
         </div>
 
-        {/* ▼▼ VISUALIZER / SECONDARY : 입력 fetch + 버튼 ▼▼ */}
+        {/* VISUALIZER / SECONDARY : 입력 Fetch + 보기 버튼 */}
         {(isVisualizer || isSecondary) && (
           <div className="rounded-lg border border-zinc-200 p-3">
             <div className="mb-2 flex items-center justify-between">
@@ -328,24 +351,18 @@ export default function NodeDetailDock({
                   onClick={fetchInputs}
                   className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-1 text-[11px] hover:bg-zinc-50 disabled:opacity-60"
                   disabled={inputFetching || !projectId}
-                  title="Fetch input files"
+                  title="입력 파일 조회"
                 >
                   <FiRefreshCw className={inputFetching ? "animate-spin" : ""} />
                   {inputFetching ? "Checking…" : "Fetch"}
                 </button>
 
-                {/* 보기 버튼들 */}
                 {isVisualizer && (
                   <button
-                    onClick={() => {
-                      if (!inputFiles || inputFiles.length === 0) return;
-                      const url = contentUrlOf(inputFiles[0].id);
-                      try { if (typeof window !== "undefined") sessionStorage.setItem("ngl.pdbUrl", url); } catch {}
-                      onOpenVisualizer();
-                    }}
+                    onClick={() => canOpenModal && setShowVisualizer(true)}
                     className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
-                    disabled={inputResult !== "SUCCESS" || !inputFiles || inputFiles.length === 0}
-                    title={inputResult === "SUCCESS" ? "Open NGL Visualizer" : "Fetch inputs first"}
+                    disabled={!canOpenModal}
+                    title={canOpenModal ? "NGL Visualizer 열기" : "먼저 입력을 가져오세요"}
                   >
                     <FiExternalLink />
                     Visualizer 보기
@@ -354,15 +371,10 @@ export default function NodeDetailDock({
 
                 {isSecondary && (
                   <button
-                    onClick={() => {
-                      if (!inputFiles || inputFiles.length === 0) return;
-                      const url = contentUrlOf(inputFiles[0].id);
-                      try { if (typeof window !== "undefined") sessionStorage.setItem("ngl.pdbUrl", url); } catch {}
-                      onOpenSecondary();
-                    }}
+                    onClick={() => canOpenModal && setShowSecondary(true)}
                     className="inline-flex items-center gap-1 rounded-md bg-indigo-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
-                    disabled={inputResult !== "SUCCESS" || !inputFiles || inputFiles.length === 0}
-                    title={inputResult === "SUCCESS" ? "Open NGL + Secondary" : "Fetch inputs first"}
+                    disabled={!canOpenModal}
+                    title={canOpenModal ? "Secondary 보기" : "먼저 입력을 가져오세요"}
                   >
                     <FiLayers />
                     Secondary 보기
@@ -371,16 +383,18 @@ export default function NodeDetailDock({
               </div>
             </div>
 
-            {/* 결과 상태 표시 */}
+            {/* 결과 상태 */}
             <div className="flex items-center gap-2">
               <div className="text-[11px] text-zinc-600">Status:</div>
               <StatusPill status={inputResult ?? "PENDING"} />
               {inputFiles && inputFiles.length > 0 && (
-                <span className="text-[11px] text-zinc-500">({inputFiles.length} file{inputFiles.length > 1 ? "s" : ""})</span>
+                <span className="text-[11px] text-zinc-500">
+                  ({inputFiles.length} file{inputFiles.length > 1 ? "s" : ""})
+                </span>
               )}
             </div>
 
-            {/* 파일 리스트 미리보기 */}
+            {/* 파일 리스트 */}
             {inputFiles && inputFiles.length > 0 && (
               <ul className="mt-2 space-y-1">
                 {inputFiles.map((f) => (
@@ -394,7 +408,7 @@ export default function NodeDetailDock({
                         href={contentUrlOf(f.id)}
                         target="_blank"
                         rel="noreferrer"
-                        title="Download/Preview"
+                        title="바로 열기/다운로드"
                       >
                         <FiExternalLink />
                         content
@@ -406,13 +420,13 @@ export default function NodeDetailDock({
             )}
 
             <p className="mt-3 text-[10px] leading-relaxed text-zinc-500">
-              백엔드가 반환하는 입력 파일 중 첫 번째 파일을 NGL에서 엽니다.
-              파일 스트리밍 엔드포인트: <code>/api/nodes/{"{fileId}"}/content</code>
+              입력 파일 중 첫 번째 파일을 NGL에 로드합니다. 스트리밍 엔드포인트:
+              <code> /api/nodes/{"{fileId}"}/content</code>
             </p>
           </div>
         )}
 
-        {/* ▼▼ 일반 노드(PDB 등) 파일 업로드/목록 ▼▼ */}
+        {/* 일반 노드(PDB 등) 파일 업로드/목록 */}
         {!isVisualizer && !isSecondary && (
           <div className="rounded-lg border border-zinc-200 p-3">
             <div className="mb-2 flex items-center justify-between">
@@ -425,7 +439,7 @@ export default function NodeDetailDock({
                   onClick={loadFiles}
                   className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-1 text-[11px] hover:bg-zinc-50 disabled:opacity-60"
                   disabled={loadingFiles}
-                  title="Refresh file list"
+                  title="파일 목록 새로고침"
                 >
                   <FiRefreshCw className={loadingFiles ? "animate-spin" : ""} />
                   {loadingFiles ? "Loading…" : "Reload"}
@@ -452,7 +466,7 @@ export default function NodeDetailDock({
                         href={contentUrlOf(f.id)}
                         target="_blank"
                         rel="noreferrer"
-                        title="Download/Preview"
+                        title="바로 열기/다운로드"
                       >
                         <FiExternalLink />
                         content
@@ -473,7 +487,7 @@ export default function NodeDetailDock({
           <button
             onClick={onRefreshLogs}
             className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-1 text-[11px] hover:bg-zinc-50"
-            title="Refresh logs"
+            title="로그 새로고침"
             disabled={refreshingLogs}
           >
             <FiRefreshCw className={refreshingLogs ? "animate-spin" : ""} />
@@ -489,6 +503,87 @@ export default function NodeDetailDock({
           )}
         </div>
       </div>
+
+      {/* ===== 모달 (내부 구현) : 전역 CSS 없이 안전 ===== */}
+      {showVisualizer && firstFile && (
+        <Modal onClose={() => setShowVisualizer(false)}>
+          <div className="w-[980px] h-[640px] bg-neutral-900 rounded-2xl p-3">
+            <NglViewerLite
+              source={{ kind: "url", url: contentUrlOf(firstFile.id), ext: "pdb" }}
+              background="transparent"
+              initialRepresentation="cartoon"
+            />
+          </div>
+        </Modal>
+      )}
+
+      {showSecondary && firstFile && (
+  <Modal onClose={() => setShowSecondary(false)}>
+    <div className="w-[1080px] h-[680px] bg-white rounded-2xl p-3">
+      <div className="grid grid-cols-2 gap-3 h-full">
+        {/* 좌: NGL */}
+        <div className="bg-neutral-900 rounded-xl p-2">
+          <NglViewerLite
+            source={{ kind: "url", url: contentUrlOf(firstFile.id), ext: "pdb" }}
+            background="transparent"
+            initialRepresentation="cartoon"
+            onReady={(stage, component, defaultRep) => {
+              setSecStage(stage);
+              setSecComp(component);
+              setSecDefaultRep(defaultRep ?? null);
+            }}
+          />
+        </div>
+
+        {/* 우: Secondary (viewer 주입) */}
+        <div className="bg-white rounded-xl ring-1 ring-zinc-200 overflow-auto p-3">
+          <SecondaryStructurePanel
+            viewer={{
+              stage: secStage,
+              component: secComp,
+              defaultRep: secDefaultRep,
+              setDefaultRep: setSecDefaultRep,
+              highlightRep: secHighlightRep,
+              setHighlightRep: setSecHighlightRep,
+              lastSele: secLastSele,
+              setLastSele: setSecLastSele,
+            }}
+          />
+        </div>
+      </div>
+    </div>
+  </Modal>
+)}
+
+
+
     </aside>
+  );
+}
+
+/** 전역 CSS에 의존하지 않는 최소 모달 */
+function Modal({
+  onClose,
+  children,
+}: {
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="fixed inset-0 z-[999]">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur" onClick={onClose} />
+      <div className="absolute inset-0 flex items-center justify-center p-4">
+        <div className="relative">
+          <button
+            onClick={onClose}
+            className="absolute -top-3 -right-3 bg-white text-zinc-700 rounded-full shadow px-2 py-1 text-xs"
+            title="닫기"
+          >
+            ✕
+          </button>
+          {children}
+        </div>
+      </div>
+    </div>
   );
 }
