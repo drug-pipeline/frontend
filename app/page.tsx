@@ -336,7 +336,7 @@ function SiteFooter() {
           <Link href="/terms" className="hover:text-zinc-700">Terms</Link>
           <Link href="/contact" className="hover:text-zinc-700">Contact</Link>
         </div>
-        <span>© {new Date().getFullYear()} Your Organization</span>
+        <span>© {new Date().getFullYear()} KRIBB</span>
       </div>
     </footer>
   );
