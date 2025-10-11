@@ -140,8 +140,36 @@ export default function PipelineHomePage() {
     const [browseOpen, setBrowseOpen] = useState(false);
     const [query, setQuery] = useState("");
 
+    const [projects, setProjects] = useState<Workflow[]>(DUMMY_WORKFLOWS);
+
     const [accountOpen, setAccountOpen] = useState(false);
     const accountRef = useRef<HTMLDivElement | null>(null);
+
+    useEffect(() => {
+        async function fetchProjects() {
+            try {
+                const res = await fetch("http://34.61.162.19/api/projects");
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+
+                // 서버 응답 데이터를 DUMMY_WORKFLOWS 형식으로 변환
+                const fetched: Workflow[] = data.map((p: any, idx: number) => ({
+                    id: String(p.id ?? `srv_${idx}`),
+                    name: p.name ?? "Untitled Project",
+                    updatedAt: p.createdAt ?? new Date().toISOString(),
+                    nodes: Math.floor(Math.random() * 8) + 3, // 임시값
+                    tags: ["Fetched"], // 임시태그
+                }));
+
+                // 더미데이터와 병합해서 보여주기
+                setProjects([...fetched, ...DUMMY_WORKFLOWS]);
+            } catch (err) {
+                console.error("❌ Failed to fetch projects:", err);
+            }
+        }
+
+        fetchProjects();
+    }, []);
 
     // Close account menu on outside click / ESC
     useEffect(() => {
@@ -337,7 +365,7 @@ export default function PipelineHomePage() {
                     {activeTab === "projects" ? (
                         <section>
                             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                                {DUMMY_WORKFLOWS.map((wf) => (
+                                {projects.map((wf) => (
                                     <Link
                                         key={wf.id}
                                         href={`/pipeline/edit?id=${encodeURIComponent(wf.id)}`}
