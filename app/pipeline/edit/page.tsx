@@ -1,5 +1,4 @@
 // app/pipeline/edit/page.tsx
-
 "use client";
 
 import React, { Suspense, useCallback, useEffect, useMemo, useState } from "react";
@@ -17,6 +16,7 @@ import ReactFlow, {
   Handle,
   type NodeProps,
   type NodeTypes,
+  OnSelectionChangeParams,
 } from "reactflow";
 import "reactflow/dist/style.css";
 
@@ -27,8 +27,18 @@ import ModuleList, {
   type ModuleKey as ListModuleKey,
 } from "@/app/components/pipeline2/ModuleList";
 
+// Feather Icons (react-icons/fi)
+import {
+  FiClock,        // PENDING
+  FiActivity,     // RUNNING
+  FiCheckCircle,  // SUCCESS
+  FiXCircle,      // FAILED
+} from "react-icons/fi";
+
 /* =========================
- * 모듈 사양
+ * 모듈 사양 (리스트용)
+ *  - 캔버스 노드는 '심플하게 기능명만' 표시 (이모지/알록달록 제거)
+ *  - ModuleList가 색/이모지를 쓸 수 있으니 구조는 유지
  * =======================*/
 type ModuleKey = ListModuleKey;
 type ModuleSpec = ListModuleSpec;
@@ -46,8 +56,10 @@ const MODULES: ModuleSpec[] = [
 const VISUALIZER_KEYS: Readonly<ModuleKey[]> = ["visualizer", "distance-map"];
 
 /* =========================
- * 서버 NodeDTO & 매핑
+ * 서버 NodeDTO & 매핑 (백엔드 enum과 1:1)
  * =======================*/
+type NodeStatus = "PENDING" | "RUNNING" | "SUCCESS" | "FAILED";
+
 type ServerNodeType =
   | "PDB"
   | "COMPOUND"
@@ -57,14 +69,12 @@ type ServerNodeType =
   | "UNIPROT_INFO"
   | "PDB_INFO";
 
-type ServerNodeStatus = "PENDING" | "READY" | "FAILED";
-
 type ServerNodeDTO = {
   id: number;
   projectId: number;
   type: ServerNodeType;
   name: string;
-  status: ServerNodeStatus;
+  status: NodeStatus;   // ✅ 백엔드와 일치
   x: number;
   y: number;
   meta?: Record<string, unknown>;
@@ -83,7 +93,7 @@ const keyToType: Record<ModuleKey, ServerNodeType> = {
   "pdb-info": "PDB_INFO",
 };
 
-// ServerNodeType -> ModuleKey (모듈 타이틀/색상/이모지는 MODULES에서 조회)
+// ServerNodeType -> ModuleKey
 const typeToKey: Record<ServerNodeType, ModuleKey> = {
   PDB: "pdb-input",
   COMPOUND: "compound-input",
@@ -95,7 +105,52 @@ const typeToKey: Record<ServerNodeType, ModuleKey> = {
 };
 
 /* =========================
- * 공용 모달 (컴팩트)
+ * 상태별 스타일 & 아이콘 (심플/세련)
+ * =======================*/
+const statusStyle = (status: NodeStatus) => {
+  switch (status) {
+    case "PENDING":
+      return {
+        bar: "bg-amber-50",
+        dot: "bg-amber-400",
+        text: "text-amber-700",
+        ring: "ring-amber-200",
+        Icon: FiClock,
+        label: "Pending",
+      };
+    case "RUNNING":
+      return {
+        bar: "bg-blue-50",
+        dot: "bg-blue-500",
+        text: "text-blue-700",
+        ring: "ring-blue-200",
+        Icon: FiActivity,
+        label: "Running",
+      };
+    case "SUCCESS":
+      return {
+        bar: "bg-emerald-50",
+        dot: "bg-emerald-500",
+        text: "text-emerald-700",
+        ring: "ring-emerald-200",
+        Icon: FiCheckCircle,
+        label: "Success",
+      };
+    case "FAILED":
+    default:
+      return {
+        bar: "bg-rose-50",
+        dot: "bg-rose-500",
+        text: "text-rose-700",
+        ring: "ring-rose-200",
+        Icon: FiXCircle,
+        label: "Failed",
+      };
+  }
+};
+
+/* =========================
+ * 공용 모달 (남겨둠 - 이후 단계에 필요)
  * =======================*/
 function Modal({
   open,
@@ -130,41 +185,39 @@ function Modal({
 }
 
 /* =========================
- * 노드 카드
+ * 노드 데이터 & 컴포넌트 (심플 UI)
+ *  - 기능명만 보임
+ *  - 상태 바/아이콘/색 반영
+ *  - 선택 시 하이라이트
  * =======================*/
 type NodeData = {
   key: ModuleKey;
   title: string;
-  color?: string;
-  emoji?: string;
-  onOpen: (key: ModuleKey) => void;
+  status: NodeStatus;
 };
 
 function NodeCard({ data, selected }: NodeProps<NodeData>) {
-  const { key, title, color, emoji, onOpen } = data;
+  const { title, status } = data;
+  const s = statusStyle(status);
 
-  const isPdbInput = key === "pdb-input";
-  const isCompoundInput = key === "compound-input";
-  const isVisualizer = VISUALIZER_KEYS.includes(key);
-  const isAdmet = key === "admet";
+  // 핸들 규칙: 입력→출력은 최소만 유지
+  // - 시각화/정보 쪽은 target, 입력 쪽은 source
+  const isVisualizer = VISUALIZER_KEYS.includes(data.key);
+  const isAdmet = data.key === "admet";
+  const hasTargetHandle = isVisualizer || isAdmet || data.key === "uniprot-info" || data.key === "pdb-info";
+  const hasSourceHandle = data.key === "pdb-input" || data.key === "compound-input";
 
-  const hasTargetHandle = isVisualizer || isAdmet || key === "uniprot-info" || key === "pdb-info";
-  const hasSourceHandle = isPdbInput || isCompoundInput;
+  const cls =
+    "group rounded-2xl bg-white/90 backdrop-blur shadow-sm ring-1 ring-zinc-200 hover:shadow-md transition-all";
 
   return (
-    <div
-      className={[
-        "group rounded-2xl bg-white/90 backdrop-blur shadow-sm ring-1 ring-zinc-200",
-        "hover:shadow-md transition-all",
-        selected ? "ring-2 ring-indigo-300 shadow-md" : "",
-      ].join(" ")}
-    >
+    <div className={`${cls} ${selected ? "ring-2 ring-indigo-300 shadow-md" : ""}`}>
       {hasTargetHandle && (
         <Handle
           type="target"
           position={Position.Left}
           id="in"
-          className="!w-3 !h-3 !bg-blue-500 border-2 border-white"
+          className="!w-3 !h-3 !bg-zinc-500 border-2 border-white"
         />
       )}
       {hasSourceHandle && (
@@ -172,36 +225,22 @@ function NodeCard({ data, selected }: NodeProps<NodeData>) {
           type="source"
           position={Position.Right}
           id="out"
-          className="!w-3 !h-3 !bg-emerald-500 border-2 border-white"
+          className="!w-3 !h-3 !bg-zinc-500 border-2 border-white"
         />
       )}
 
-      <div
-        className={[
-          "flex items-center justify-between gap-2 px-3 py-2 rounded-t-2xl",
-          color ?? "bg-zinc-50",
-        ].join(" ")}
-      >
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="text-base">{emoji ?? "🔹"}</div>
-          <div className="text-sm font-semibold leading-tight truncate">{title}</div>
-        </div>
-        <div className="flex items-center gap-1">
-          <div className="text-[10px] text-zinc-500 hidden sm:block">drag • connect</div>
-          <button
-            type="button"
-            onClick={() => onOpen(key)}
-            className="text-xs rounded-lg border border-zinc-300 px-2 py-1 bg-white hover:bg-zinc-50"
-            aria-label={`Open ${title}`}
-            title={`Open ${title}`}
-          >
-            Open
-          </button>
+      {/* 상태 바 + 기능명만 */}
+      <div className={`flex items-center gap-2 px-3 py-2 rounded-t-2xl ${s.bar}`}>
+        <span className={`inline-block h-2.5 w-2.5 rounded-full ${s.dot}`} />
+        <div className={`flex items-center gap-1.5 min-w-0 ${s.text}`}>
+          <s.Icon className="shrink-0" aria-hidden />
+          <div className="truncate text-sm font-semibold leading-tight text-zinc-800">{title}</div>
         </div>
       </div>
 
+      {/* 추가 설명 제거 → 심플 */}
       <div className="px-3 py-2 text-[11px] text-zinc-500">
-        Add inputs → connect to downstream modules. Click <b>Open</b> to load the module UI.
+        Drag to connect.
       </div>
     </div>
   );
@@ -210,7 +249,7 @@ function NodeCard({ data, selected }: NodeProps<NodeData>) {
 const nodeTypes: NodeTypes = { card: NodeCard };
 
 /* =========================
- * 연결 규칙
+ * 연결 규칙 (간단 유지)
  * =======================*/
 function allowConnection(
   sourceNode?: Node<NodeData>,
@@ -242,7 +281,7 @@ type ProjectDTO = {
 };
 
 /* =========================
- * 실제 페이지(클라이언트, 훅 사용)
+ * 페이지
  * =======================*/
 function PipelinePage() {
   const router = useRouter();
@@ -259,23 +298,17 @@ function PipelinePage() {
   const [nodes, setNodes, onNodesChange] = useNodesState<NodeData>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge[]>([]);
 
-  // 모듈 모달
-  const [modalKey, setModalKey] = useState<ModuleKey | null>(null);
-  const modalOpen = modalKey !== null;
+  // 선택 상태 (2단계에서 우측 패널과 연결 예정)
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
   // UI 토글
   const [showMiniMap, setShowMiniMap] = useState<boolean>(true);
   const [showControls, setShowControls] = useState<boolean>(true);
 
-  // Rename 모달
-  const [renameOpen, setRenameOpen] = useState<boolean>(false);
-  const [renameInput, setRenameInput] = useState<string>(workflowName);
-  const [renaming, setRenaming] = useState<boolean>(false);
-
   // 서버 노드 로딩 상태
   const [loadingNodes, setLoadingNodes] = useState<boolean>(false);
 
-  // 이름 로드 (GET /projects/{id})
+  // 이름 로드
   useEffect(() => {
     const loadName = async () => {
       if (!projectId) return;
@@ -285,8 +318,7 @@ function PipelinePage() {
         if (!res.ok) throw new Error(`GET /projects/${projectId} failed (${res.status})`);
         const data: ProjectDTO = await res.json();
         if (data?.name) {
-          setWorkflowName(data.name);     // Header에 바로 반영
-          setRenameInput(data.name);
+          setWorkflowName(data.name);
         }
       } catch (err) {
         console.error("[Load Project Name] error:", err);
@@ -297,30 +329,28 @@ function PipelinePage() {
     loadName();
   }, [projectId]);
 
-  // 서버 → ReactFlow 노드 변환
+  // 서버 → ReactFlow 노드 변환 (상태 포함)
   const dtoToFlowNode = useCallback(
     (dto: ServerNodeDTO): Node<NodeData> => {
       const key = typeToKey[dto.type];
-      const meta = MODULES.find(m => m.key === key);
       return {
         id: String(dto.id),
         type: "card",
         position: { x: dto.x ?? 0, y: dto.y ?? 0 },
         data: {
           key,
-          title: dto.name ?? meta?.title ?? key,
-          color: meta?.color,
-          emoji: meta?.emoji,
-          onOpen: (k: ModuleKey) => setModalKey(k),
+          title: dto.name || key,
+          status: dto.status ?? "PENDING",
         },
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
+        selectable: true,
       };
     },
     []
   );
 
-  // 노드 목록 새로고침 (GET /api/projects/{id}/nodes)
+  // 노드 목록 새로고침
   const refreshNodes = useCallback(async () => {
     if (!projectId) return;
     try {
@@ -337,64 +367,28 @@ function PipelinePage() {
     }
   }, [projectId, dtoToFlowNode, setNodes]);
 
-  // 최초 진입 시 노드 로드
+  // 최초 로드
   useEffect(() => {
     if (!projectId) return;
     refreshNodes();
   }, [projectId, refreshNodes]);
 
-  const openRename = useCallback(() => {
-    setRenameInput(workflowName);
-    setRenameOpen(true);
-  }, [workflowName]);
-
-  // Rename 저장 (PUT /projects/{id})
-  const submitRename = useCallback(async () => {
-    const name = renameInput.trim();
-    if (name.length === 0) return;
-    if (!projectId) {
-      alert("Project ID가 없습니다. URL에 ?id=... 를 지정하세요.");
-      return;
-    }
-    try {
-      setRenaming(true);
-      const res = await fetch(`${API_BASE}/projects/${projectId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
-      });
-      if (!res.ok) throw new Error(`PUT /projects/${projectId} failed (${res.status})`);
-      const updated: ProjectDTO = await res.json().catch(() => ({ id: projectId, name } as ProjectDTO));
-      setWorkflowName(updated?.name ?? name); // Header 즉시 반영
-      setRenameOpen(false);
-    } catch (err) {
-      console.error("[Rename Project] error:", err);
-      alert("프로젝트 이름 변경에 실패했습니다.");
-    } finally {
-      setRenaming(false);
-    }
-  }, [renameInput, projectId]);
-
-  // 노드 생성: 서버 저장(POST) → 즉시 재조회(GET)
+  // 노드 생성 (기본: PENDING)
   const createNode = useCallback(
     async (spec: ModuleSpec) => {
       if (!projectId) {
         alert("Project ID가 없습니다. URL에 ?id=... 를 지정하세요.");
         return;
       }
-
-      // 화면상 무작위 위치 (초기 배치)
       const pos = { x: 140 + Math.random() * 520, y: 100 + Math.random() * 360 };
-
-      // 서버 요청용 페이로드
       const payload = {
         projectId,
         type: keyToType[spec.key],
         name: spec.title,
-        status: "PENDING" as ServerNodeStatus,
+        status: "PENDING" as NodeStatus,
         x: Math.round(pos.x),
         y: Math.round(pos.y),
-        meta: {}, // 필요 시 확장
+        meta: {},
       };
 
       try {
@@ -404,8 +398,6 @@ function PipelinePage() {
           body: JSON.stringify(payload),
         });
         if (!res.ok) throw new Error(`POST /projects/${projectId}/nodes failed (${res.status})`);
-
-        // 서버 반영 후 동기화
         await refreshNodes();
       } catch (err) {
         console.error("[Create Node] error:", err);
@@ -431,7 +423,7 @@ function PipelinePage() {
     [nodes]
   );
 
-  // 저장(placeholder)
+  // Header 동작들 (이전 로직 유지)
   const onSave = useCallback(() => {
     const payload = {
       name: workflowName,
@@ -442,6 +434,7 @@ function PipelinePage() {
         data: {
           key: data.key,
           title: data.title,
+          status: data.status,
         },
       })),
       edges: edges.map(({ id, source, target, sourceHandle, targetHandle }) => ({
@@ -456,7 +449,6 @@ function PipelinePage() {
     console.log("[Pipeline Save]", payload);
   }, [workflowName, nodes, edges]);
 
-  // Duplicate (확인 → GET → POST)
   const [duplicating, setDuplicating] = useState<boolean>(false);
   const onDuplicate = useCallback(async () => {
     if (!projectId) {
@@ -480,9 +472,7 @@ function PipelinePage() {
       });
       if (!postRes.ok) throw new Error(`POST /projects failed (${postRes.status})`);
       const created: ProjectDTO = await postRes.json().catch(() => ({ id: -1, name: nameForCopy }));
-
       alert(`프로젝트가 복제되었습니다.\n[${created.name}] (id: ${created.id ?? "?"})`);
-      // if (created.id && created.id > 0) router.push(`/pipeline?page=...&id=${created.id}`);
     } catch (err) {
       console.error("[Duplicate Project] error:", err);
       alert("프로젝트 복제에 실패했습니다.");
@@ -491,7 +481,6 @@ function PipelinePage() {
     }
   }, [projectId, workflowName]);
 
-  // Delete (확인 → DELETE → /pipeline 리다이렉트)
   const [deleting, setDeleting] = useState<boolean>(false);
   const onDelete = useCallback(async () => {
     if (!projectId) {
@@ -515,30 +504,19 @@ function PipelinePage() {
     }
   }, [projectId, workflowName, router]);
 
-  // 모듈 모달 내용
-  const modalTitle = modalKey ? MODULES.find((m) => m.key === modalKey)?.title ?? "Module" : "";
-  const modalBody = (
-    <div className="space-y-3 text-sm text-zinc-700">
-      <p>
-        <b>{modalTitle}</b> placeholder. 실제 UI/예제는 다음 단계에서 연결합니다.
-      </p>
-      <ul className="list-disc pl-5 text-zinc-600">
-        <li>노드 생성 시 서버 저장(POST) → 즉시 재조회(GET)</li>
-        <li>연결 규칙: pdb→visualizer/info, compound→admet</li>
-      </ul>
-    </div>
-  );
-
-  // Header에는 실제 워크플로우명 그대로 전달
-  const headerName = workflowName;
+  // 선택 변경(다음 단계 패널 연동용)
+  const onSelectionChange = useCallback((params: OnSelectionChangeParams) => {
+    const id = params.nodes?.[0]?.id ?? null;
+    setSelectedNodeId(id);
+  }, []);
 
   return (
     <div className="min-h-screen w-full bg-white text-zinc-900 grid grid-rows-[56px_1fr]">
       {/* 헤더 */}
       <div className="relative z-[10000]">
         <Header
-          workflowName={headerName}
-          onOpenRename={openRename}
+          workflowName={workflowName}
+          onOpenRename={() => {/* 2단계에서 사용 */}}
           onDuplicate={onDuplicate}
           onDelete={onDelete}
           onSave={onSave}
@@ -553,12 +531,13 @@ function PipelinePage() {
         <ModuleList modules={MODULES} onCreate={createNode} />
 
         <main className="relative">
-          {/* 로딩 오버레이 (노드 재동기화 중) */}
+          {/* 로딩 오버레이 */}
           {loadingNodes && (
             <div className="absolute inset-0 z-10 grid place-items-center bg-white/50 text-xs text-zinc-600">
               Syncing nodes…
             </div>
           )}
+
           <div className="absolute inset-0">
             <ReactFlow
               nodes={nodes}
@@ -567,6 +546,7 @@ function PipelinePage() {
               onEdgesChange={onEdgesChange}
               onConnect={onConnect}
               isValidConnection={isValidConnection}
+              onSelectionChange={onSelectionChange}
               nodeTypes={nodeTypes}
               fitView
               proOptions={{ hideAttribution: true }}
@@ -578,48 +558,12 @@ function PipelinePage() {
           </div>
         </main>
       </div>
-
-      {/* 모듈 모달 */}
-      <Modal open={modalOpen} title={modalTitle} onClose={() => setModalKey(null)}>
-        {modalBody}
-      </Modal>
-
-      {/* Rename 모달 */}
-      <Modal open={renameOpen} title="Rename Workflow" onClose={() => setRenameOpen(false)}>
-        <div className="space-y-3">
-          <label className="text-sm text-zinc-600">Workflow name</label>
-          <input
-            className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
-            value={renameInput}
-            onChange={(e) => setRenameInput(e.target.value)}
-            placeholder="Enter a new name…"
-            autoFocus
-            disabled={renaming}
-          />
-          <div className="flex items-center justify-end gap-2 pt-1">
-            <button
-              onClick={() => setRenameOpen(false)}
-              className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-50"
-              disabled={renaming}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={submitRename}
-              className="rounded-lg bg-black px-3 py-1.5 text-sm text-white hover:bg-zinc-900 disabled:opacity-60"
-              disabled={renaming}
-            >
-              {renaming ? "Saving..." : "Save"}
-            </button>
-          </div>
-        </div>
-      </Modal>
     </div>
   );
 }
 
 /* =========================
- * 페이지 export: Suspense 경계로 감싸기
+ * Suspense 경계
  * =======================*/
 function PageFallback() {
   return (
