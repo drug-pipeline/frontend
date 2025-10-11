@@ -12,7 +12,6 @@ import {
     HiOutlineClock,
     HiOutlineUserCircle,
     HiChevronDown,
-    HiOutlineFolder,
     HiOutlineEye,
     HiOutlineAdjustments,
     HiOutlineChartBar,
@@ -126,10 +125,10 @@ function TagIcon({
  * 존재하지 않을 경우를 대비한 안전한 래퍼 (있으면 사용, 없으면 Template로 대체)
  */
 function HiOutlineBeakerSafe({ className }: { className?: string }) {
-    // 안전하게 타입을 검사하고 JSX로 렌더링
     const MaybeBeaker: unknown = (globalThis as any).HiOutlineBeaker;
     if (typeof MaybeBeaker === "function") {
-        const BeakerComp = MaybeBeaker as React.ComponentType<{ className?: string }>;
+        const BeakerComp =
+            MaybeBeaker as React.ComponentType<{ className?: string }>;
         return <BeakerComp className={className} />;
     }
     return <HiOutlineTemplate className={className} />;
@@ -199,6 +198,91 @@ export default function PipelineHomePage() {
             ),
         [query]
     );
+
+    /** ---------- Actions: Delete & Duplicate (with confirm) ---------- */
+    const confirmOnce = (message: string) => {
+        return typeof window !== "undefined" ? window.confirm(message) : false;
+    };
+
+    const handleDelete = async (wf: Workflow) => {
+        const ok = confirmOnce(
+            `Delete “${wf.name}”? This action cannot be undone.\n\n정말 삭제할까요?`
+        );
+        if (!ok) return;
+
+        try {
+            const res = await fetch(`/api/projects/${encodeURIComponent(wf.id)}`, {
+                method: "DELETE",
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            // 성공 시 UI에서 제거
+            setProjects((prev) => prev.filter((p) => p.id !== wf.id));
+        } catch (err) {
+            console.error("❌ Delete failed:", err);
+            alert("삭제에 실패했습니다. 서버 로그를 확인해 주세요.");
+        }
+    };
+
+    // 기존 handleDuplicate 교체
+    const handleDuplicate = async (wf: Workflow) => {
+        // 1) 실행 전 확인
+        const ok = typeof window !== "undefined"
+            ? window.confirm(`Duplicate “${wf.name}”? A copy will be created.\n\n정말 복제할까요?`)
+            : false;
+        if (!ok) return;
+
+        // 2) 새 이름 결정 (기본: "<원래이름> (copy)")
+        const defaultName = `${wf.name} (copy)`;
+        // 필요하면 프롬프트 대신 바로 defaultName을 사용해도 됨.
+        const newName = defaultName;
+
+        try {
+            // 3) name 포함해서 PUT 전송
+            const res = await fetch(`/api/projects/${encodeURIComponent(wf.id)}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ duplicate: true, name: newName }),
+            });
+
+            if (!res.ok) {
+                // 에러 메시지 추출 시도
+                let serverMsg = "";
+                try {
+                    const t = await res.text();
+                    serverMsg = t?.slice(0, 300);
+                } catch { }
+                throw new Error(`HTTP ${res.status}${serverMsg ? ` — ${serverMsg}` : ""}`);
+            }
+
+            // 4) 서버가 새 프로젝트를 반환한다고 가정
+            let data: any = null;
+            try {
+                data = await res.json();
+            } catch {
+                // 빈 응답일 수도 있으니 방어
+            }
+
+            if (data?.id && String(data.id) !== wf.id) {
+                // 새 ID면 목록에 추가하고 이동
+                const duplicated: Workflow = {
+                    id: String(data.id),
+                    name: data.name ?? newName,
+                    updatedAt: data.createdAt ?? new Date().toISOString(),
+                    nodes: Math.floor(Math.random() * 8) + 3,
+                    tags: ["Duplicated"],
+                };
+                setProjects((prev) => [duplicated, ...prev]);
+                window.location.href = `/pipeline/edit?id=${encodeURIComponent(duplicated.id)}`;
+            } else {
+                // 새 ID가 없으면 업데이트로 처리된 경우일 수 있음
+                alert("복제 요청이 처리되었습니다. 새 항목이 보이지 않으면 새로고침해 주세요.");
+            }
+        } catch (err) {
+            console.error("❌ Duplicate failed:", err);
+            alert("복제에 실패했습니다. 서버 로그를 확인해 주세요.");
+        }
+    };
+
 
     return (
         <div className="min-h-screen bg-white">
@@ -315,7 +399,6 @@ export default function PipelineHomePage() {
                                 Create
                             </Link>
 
-
                             {/* 템플릿 찾기 버튼 (히어로) */}
                             <button
                                 onClick={() => setBrowseOpen(true)}
@@ -335,30 +418,33 @@ export default function PipelineHomePage() {
                     {/* Segmented Toggle with animated highlight */}
                     <div className="flex items-center justify-start">
                         <div className="relative inline-flex rounded-lg border border-zinc-200 bg-zinc-50 p-1">
-                            {/* highlight: transform 제거, left/right로 정확히 반칸 고정 */}
+                            {/* highlight */}
                             <div
-                                className={`absolute top-1 bottom-1 rounded-md bg-white shadow-sm transition-all duration-300 ease-out
-      ${activeTab === "projects" ? "left-1 right-1/2" : "left-1/2 right-1"}`}
+                                className={`absolute top-1 bottom-1 rounded-md bg-white shadow-sm transition-all duration-300 ease-out ${activeTab === "projects" ? "left-1 right-1/2" : "left-1/2 right-1"
+                                    }`}
                                 aria-hidden
                             />
                             <button
                                 onClick={() => setActiveTab("projects")}
-                                className={`relative z-10 px-4 py-1.5 text-sm rounded-md transition-colors duration-200 min-w-[110px] text-center
-      ${activeTab === "projects" ? "text-zinc-900" : "text-zinc-600 hover:text-zinc-800"}`}
+                                className={`relative z-10 px-4 py-1.5 text-sm rounded-md transition-colors duration-200 min-w-[110px] text-center ${activeTab === "projects"
+                                        ? "text-zinc-900"
+                                        : "text-zinc-600 hover:text-zinc-800"
+                                    }`}
                                 aria-pressed={activeTab === "projects"}
                             >
                                 My Projects
                             </button>
                             <button
                                 onClick={() => setActiveTab("templates")}
-                                className={`relative z-10 px-4 py-1.5 text-sm rounded-md transition-colors duration-200 min-w-[110px] text-center
-      ${activeTab === "templates" ? "text-zinc-900" : "text-zinc-600 hover:text-zinc-800"}`}
+                                className={`relative z-10 px-4 py-1.5 text-sm rounded-md transition-colors duration-200 min-w-[110px] text-center ${activeTab === "templates"
+                                        ? "text-zinc-900"
+                                        : "text-zinc-600 hover:text-zinc-800"
+                                    }`}
                                 aria-pressed={activeTab === "templates"}
                             >
                                 Templates
                             </button>
                         </div>
-
                     </div>
 
                     {/* Tab content */}
@@ -369,9 +455,7 @@ export default function PipelineHomePage() {
                                     <Link
                                         key={wf.id}
                                         href={`/pipeline/edit?id=${encodeURIComponent(wf.id)}`}
-                                        className="group relative rounded-xl border border-zinc-200 bg-white p-4 shadow-sm transition-all cursor-pointer
-                               hover:-translate-y-0.5 hover:shadow-lg ring-1 ring-transparent hover:ring-zinc-200 hover:border-zinc-300
-                               focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
+                                        className="group relative rounded-xl border border-zinc-200 bg-white p-4 shadow-sm transition-all cursor-pointer hover:-translate-y-0.5 hover:shadow-lg ring-1 ring-transparent hover:ring-zinc-200 hover:border-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
                                         aria-label={`Open ${wf.name}`}
                                     >
                                         <div className="flex items-start justify-between gap-3">
@@ -404,7 +488,7 @@ export default function PipelineHomePage() {
                                                     onClick={(e) => {
                                                         e.preventDefault();
                                                         e.stopPropagation();
-                                                        // TODO: duplicate
+                                                        void handleDuplicate(wf);
                                                     }}
                                                 >
                                                     <HiOutlineDuplicate className="h-5 w-5 text-zinc-600" />
@@ -416,7 +500,7 @@ export default function PipelineHomePage() {
                                                     onClick={(e) => {
                                                         e.preventDefault();
                                                         e.stopPropagation();
-                                                        // TODO: delete
+                                                        void handleDelete(wf);
                                                     }}
                                                 >
                                                     <HiOutlineTrash className="h-5 w-5 text-zinc-600" />
@@ -458,9 +542,7 @@ export default function PipelineHomePage() {
                                     <Link
                                         key={tpl.id}
                                         href={`/pipeline/edit?template=${encodeURIComponent(tpl.id)}`}
-                                        className="group relative rounded-xl border border-zinc-200 bg-white p-4 shadow-sm transition-all cursor-pointer
-                               hover:-translate-y-0.5 hover:shadow-lg ring-1 ring-transparent hover:ring-zinc-200 hover:border-zinc-300
-                               focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
+                                        className="group relative rounded-xl border border-zinc-200 bg-white p-4 shadow-sm transition-all cursor-pointer hover:-translate-y-0.5 hover:shadow-lg ring-1 ring-transparent hover:ring-zinc-200 hover:border-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
                                     >
                                         <div className="flex items-center gap-3">
                                             <div className="grid h-9 w-9 place-items-center rounded-lg bg-zinc-100 text-zinc-700">
@@ -528,8 +610,7 @@ export default function PipelineHomePage() {
                                     <Link
                                         key={tpl.id}
                                         href={`/pipeline/edit?template=${encodeURIComponent(tpl.id)}`}
-                                        className="group relative rounded-xl border border-zinc-200 bg-white p-4 shadow-sm transition-all cursor-pointer
-                               hover:-translate-y-0.5 hover:shadow-lg ring-1 ring-transparent hover:ring-zinc-200 hover:border-zinc-300"
+                                        className="group relative rounded-xl border border-zinc-200 bg-white p-4 shadow-sm transition-all cursor-pointer hover:-translate-y-0.5 hover:shadow-lg ring-1 ring-transparent hover:ring-zinc-200 hover:border-zinc-300"
                                         onClick={() => setBrowseOpen(false)}
                                     >
                                         <div className="flex items-center gap-3">
