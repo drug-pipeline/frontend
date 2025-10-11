@@ -256,36 +256,36 @@ export default function PipelineHomePage() {
 
                         <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
                             <Link
-  href="#"
-  onClick={async (e) => {
-    e.preventDefault();
-    try {
-      const res = await fetch("http://34.61.162.19/api/projects", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: "Kinase Inhibitor Discovery" }),
-      });
+                                href="#"
+                                onClick={async (e) => {
+                                    e.preventDefault();
+                                    try {
+                                        const res = await fetch("http://34.61.162.19/api/projects", {
+                                            method: "POST",
+                                            headers: { "Content-Type": "application/json" },
+                                            body: JSON.stringify({ name: "My Workflow" }),
+                                        });
 
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      console.log("✅ Project created:", data);
+                                        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                                        const data = await res.json();
+                                        console.log("✅ Project created:", data);
 
-      // 생성 성공 시 /pipeline/edit?id=프로젝트ID 로 이동
-      if (data.id) {
-        window.location.href = `/pipeline/edit?id=${data.id}`;
-      } else {
-        alert("Project created but no ID returned.");
-      }
-    } catch (err) {
-      console.error("❌ Failed to create project:", err);
-      alert("Project creation failed. Check the backend logs.");
-    }
-  }}
-  className="inline-flex items-center gap-2 rounded-xl bg-black px-5 py-3 text-sm font-medium text-white hover:bg-zinc-900 active:bg-zinc-800"
->
-  <HiPlus className="h-5 w-5" />
-  Create
-</Link>
+                                        // 생성 성공 시 /pipeline/edit?id=프로젝트ID 로 이동
+                                        if (data.id) {
+                                            window.location.href = `/pipeline/edit?id=${data.id}`;
+                                        } else {
+                                            alert("Project created but no ID returned.");
+                                        }
+                                    } catch (err) {
+                                        console.error("❌ Failed to create project:", err);
+                                        alert("Project creation failed. Check the backend logs.");
+                                    }
+                                }}
+                                className="inline-flex items-center gap-2 rounded-xl bg-black px-5 py-3 text-sm font-medium text-white hover:bg-zinc-900 active:bg-zinc-800"
+                            >
+                                <HiPlus className="h-5 w-5" />
+                                Create
+                            </Link>
 
 
                             {/* 템플릿 찾기 버튼 (히어로) */}
@@ -307,29 +307,29 @@ export default function PipelineHomePage() {
                     {/* Segmented Toggle with animated highlight */}
                     <div className="flex items-center justify-start">
                         <div className="relative inline-flex rounded-lg border border-zinc-200 bg-zinc-50 p-1">
-  {/* highlight: transform 제거, left/right로 정확히 반칸 고정 */}
-  <div
-    className={`absolute top-1 bottom-1 rounded-md bg-white shadow-sm transition-all duration-300 ease-out
+                            {/* highlight: transform 제거, left/right로 정확히 반칸 고정 */}
+                            <div
+                                className={`absolute top-1 bottom-1 rounded-md bg-white shadow-sm transition-all duration-300 ease-out
       ${activeTab === "projects" ? "left-1 right-1/2" : "left-1/2 right-1"}`}
-    aria-hidden
-  />
-  <button
-    onClick={() => setActiveTab("projects")}
-    className={`relative z-10 px-4 py-1.5 text-sm rounded-md transition-colors duration-200 min-w-[110px] text-center
+                                aria-hidden
+                            />
+                            <button
+                                onClick={() => setActiveTab("projects")}
+                                className={`relative z-10 px-4 py-1.5 text-sm rounded-md transition-colors duration-200 min-w-[110px] text-center
       ${activeTab === "projects" ? "text-zinc-900" : "text-zinc-600 hover:text-zinc-800"}`}
-    aria-pressed={activeTab === "projects"}
-  >
-    My Projects
-  </button>
-  <button
-    onClick={() => setActiveTab("templates")}
-    className={`relative z-10 px-4 py-1.5 text-sm rounded-md transition-colors duration-200 min-w-[110px] text-center
+                                aria-pressed={activeTab === "projects"}
+                            >
+                                My Projects
+                            </button>
+                            <button
+                                onClick={() => setActiveTab("templates")}
+                                className={`relative z-10 px-4 py-1.5 text-sm rounded-md transition-colors duration-200 min-w-[110px] text-center
       ${activeTab === "templates" ? "text-zinc-900" : "text-zinc-600 hover:text-zinc-800"}`}
-    aria-pressed={activeTab === "templates"}
-  >
-    Templates
-  </button>
-</div>
+                                aria-pressed={activeTab === "templates"}
+                            >
+                                Templates
+                            </button>
+                        </div>
 
                     </div>
 
