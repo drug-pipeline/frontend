@@ -89,7 +89,8 @@ type NodeLogsDTO = {
 /* =========================
  * 모듈 키 <-> 서버 타입 매핑
  * =======================*/
-type ModuleKey =
+// ✅ 그대로(또는 원복)
+export type ModuleKey =
   | "pdb-input"
   | "compound-input"
   | "visualizer"
@@ -98,7 +99,8 @@ type ModuleKey =
   | "uniprot-info"
   | "pdb-info";
 
-const keyToType: Record<ModuleKey, ServerNodeType> = {
+
+const keyToType: Record<string, ServerNodeType> = {
   "pdb-input": "PDB",
   "compound-input": "COMPOUND",
   visualizer: "VISUALIZER",
@@ -218,9 +220,8 @@ function PipelinePage() {
   const [renameInput, setRenameInput] = useState<string>("");
   const [renaming, setRenaming] = useState<boolean>(false);
 
-  // === Visualizer 모달 & 소스 파일 URL 상태 ===
+  // === Visualizer 모달 ===
   const [vizOpen, setVizOpen] = useState<boolean>(false);
-  const [vizSrc, setVizSrc] = useState<string | null>(null);
 
   // NGL viewer state (타입 충돌 방지를 위해 any)
   const [viewerStage, setViewerStage] = useState<any>(null);
@@ -266,21 +267,31 @@ function PipelinePage() {
 
   // DTO -> Flow Node
   const dtoToFlowNode = useCallback((dto: ServerNodeDTO): Node<NodeData> => {
-    const key = typeToKey[dto.type];
-    return {
-      id: String(dto.id),
-      type: "card",
-      position: { x: dto.x ?? 0, y: dto.y ?? 0 },
-      data: {
-        key,
-        title: dto.name || key,
-        status: dto.status ?? "PENDING",
-      },
-      sourcePosition: Position.Right,
-      targetPosition: Position.Left,
-      selectable: true,
-    };
-  }, []);
+  const key = typeToKey[dto.type as keyof typeof typeToKey] ?? "pdb-input";
+  const safeStatus: NodeStatus =
+    dto.status === "PENDING" ||
+    dto.status === "RUNNING" ||
+    dto.status === "SUCCESS" ||
+    dto.status === "FAILED"
+      ? dto.status
+      : "PENDING";
+
+  return {
+    id: String(dto.id),
+    type: "card",
+    position: { x: dto.x ?? 0, y: dto.y ?? 0 },
+    data: {
+      key,
+      title: dto.name || key,
+      status: safeStatus,
+    },
+    sourcePosition: Position.Right,
+    targetPosition: Position.Left,
+    selectable: true,
+  };
+}, []);
+
+
 
   // 노드 목록 새로고침
   const refreshNodes = useCallback(async () => {
@@ -352,7 +363,7 @@ function PipelinePage() {
 
       const payload = {
         projectId,
-        type: keyToType[spec.key],
+        type: (keyToType[spec.key] ?? "PDB") as ServerNodeType,
         name: spec.key === "visualizer" ? "Visualizer" : spec.title,
         status: "PENDING" as NodeStatus,
         x: Math.round(pos.x),
@@ -702,16 +713,16 @@ function PipelinePage() {
               nodes={
                 selectedNodeId
                   ? nodes.map((n) =>
-                      n.id === selectedNodeId
-                        ? n
-                        : {
-                            ...n,
-                            style: {
-                              opacity: 0.9,
-                              filter: "grayscale(0.12) brightness(0.98)",
-                            },
-                          }
-                    )
+                    n.id === selectedNodeId
+                      ? n
+                      : {
+                        ...n,
+                        style: {
+                          opacity: 0.9,
+                          filter: "grayscale(0.12) brightness(0.98)",
+                        },
+                      }
+                  )
                   : nodes
               }
               edges={edges}
@@ -736,22 +747,23 @@ function PipelinePage() {
             node={detailNode as unknown as MinimalNodeDTO}
             saving={savingNode}
             onRename={renameSelectedNode}
-            onRefreshLogs={() => {
-              if (selectedNodeId) loadNodeLogs(selectedNodeId);
+            onRefreshLogs={async () => {
+              if (selectedNodeId) await loadNodeLogs(selectedNodeId);
             }}
             logs={logs}
             refreshingLogs={refreshingLogs}
-            onReloadDetail={() => {
-              if (selectedNodeId) reloadDetail(selectedNodeId);
+            onReloadDetail={async () => {
+              if (selectedNodeId) await reloadDetail(selectedNodeId);
             }}
             reloadingDetail={reloadingDetail}
-            projectId={projectId}
+            projectId={projectId ?? 0}
             onRequestRefreshNodes={async () => {
               await refreshNodes();
               await refreshLinks();
             }}
-            onOpenVisualizer={(url) => {
-              setVizSrc(url || null);
+            // ✅ NodeDetailDock 내부에서 sessionStorage에 'ngl.pdbUrl'을 저장하고
+            //    단순히 모달만 열어주면 됨 (파라미터 필요 없음)
+            onOpenVisualizer={() => {
               setVizOpen(true);
             }}
           />
@@ -760,7 +772,8 @@ function PipelinePage() {
           <SimpleModal open={vizOpen} title="Visualizer" onClose={() => setVizOpen(false)} wide>
             <div className="h-[calc(100%-1.5rem)]">
               <div className="relative h-full w-full">
-                <NglWebapp viewer={viewerProp as any} pdbUrl={vizSrc ?? undefined} />
+                {/* ✅ NglWebapp은 viewer만 필요 (pdbUrl prop 제거) */}
+                <NglWebapp viewer={viewerProp as any} />
               </div>
             </div>
           </SimpleModal>
