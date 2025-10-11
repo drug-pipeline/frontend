@@ -96,11 +96,11 @@ jobs:
           if [ ! -f docker-compose.yml ]; then echo "ERROR: ~/apps/stack/docker-compose.yml missing"; exit 1; fi
           if [ ! -f .env ]; then echo "ERROR: ~/apps/stack/.env missing"; exit 1; fi
 
-          echo "--- Pulling images (frontend + proxy) ---"
-          docker compose pull reverse-proxy frontend
+          echo "--- Pulling images (frontend + nginx) ---"
+          docker compose pull nginx frontend
 
           echo "--- Restarting services ---"
-          docker compose up -d reverse-proxy frontend
+          docker compose up -d nginx frontend
 
           echo "--- Check ---"
           docker compose ps
