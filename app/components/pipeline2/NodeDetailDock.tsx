@@ -12,6 +12,8 @@ import {
   FiCheckCircle,
   FiXCircle,
   FiPaperclip,
+  FiPlayCircle,
+  FiDownloadCloud,
 } from "react-icons/fi";
 import { type NodeStatus } from "@/app/components/pipeline2/NodeCard";
 
@@ -74,11 +76,14 @@ type Props = {
   onReloadDetail: () => void;
   reloadingDetail: boolean;
 
-  /** 추가: 프로젝트 컨텍스트 (상태 업데이트용 PUT 경로에 필요) */
+  /** 프로젝트 컨텍스트 (상태 업데이트용 PUT 경로에 필요) */
   projectId: number | undefined;
 
-  /** 추가: 노드 상태 변경 후 상위에서 nodes/edges 다시 불러오게 */
+  /** 노드/엣지 다시 불러오기 */
   onRequestRefreshNodes: () => void;
+
+  /** Visualizer 모달 열기 (상위 page.tsx가 처리) */
+  onOpenVisualizer: () => void;
 };
 
 function formatBytes(bytes: number): string {
@@ -105,18 +110,25 @@ export default function NodeDetailDock({
   reloadingDetail,
   projectId,
   onRequestRefreshNodes,
+  onOpenVisualizer,
 }: Props) {
   const [editMode, setEditMode] = useState(false);
   const [localName, setLocalName] = useState(node?.name ?? "");
 
-  // ---- 파일 목록/업로드 상태 ----
+  // ---- 파일 목록/업로드 상태 (PDB 등 일반 노드에서만 사용) ----
   const [files, setFiles] = useState<NodeFileDTO[] | null>(null);
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [uploading, setUploading] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
+  // ---- VISUALIZER용 fetch 상태 ----
+  const [vizFetching, setVizFetching] = useState(false);
+  const [vizFiles, setVizFiles] = useState<NodeFileDTO[] | null>(null);
+  const [vizResult, setVizResult] = useState<NodeStatus | null>(null); // SUCCESS / FAILED
+
   const nodeId = node?.id;
 
+  /** 일반 노드: 자기 자신의 파일 목록 */
   const loadFiles = useCallback(async () => {
     if (!nodeId) return;
     setLoadingFiles(true);
@@ -133,10 +145,10 @@ export default function NodeDetailDock({
     }
   }, [nodeId]);
 
-  /** 추가: PDB 노드 상태를 SUCCESS로 승격 */
+  /** PDB 노드 상태를 SUCCESS로 승격 (업로드 성공 시에만 사용) */
   const markPdbSuccess = useCallback(async () => {
     if (!projectId || !nodeId || !node) return;
-    if (node.type !== "PDB") return; // PDB에만 적용
+    if (node.type !== "PDB") return;
     try {
       const res = await fetch(`${API_BASE}/projects/${projectId}/nodes/${nodeId}`, {
         method: "PUT",
@@ -147,12 +159,13 @@ export default function NodeDetailDock({
         console.error("[PDB->SUCCESS] PUT failed:", res.status);
         return;
       }
-      onRequestRefreshNodes(); // 상위에서 nodes/edges 재로딩
+      onRequestRefreshNodes();
     } catch (e) {
       console.error("[PDB->SUCCESS] error:", e);
     }
   }, [projectId, nodeId, node, onRequestRefreshNodes]);
 
+  /** 파일 업로드 (PDB 등 일반 노드만) */
   const uploadFiles = useCallback(
     async (fileList: FileList | File[]) => {
       if (!nodeId) return;
@@ -163,7 +176,7 @@ export default function NodeDetailDock({
       try {
         for (const f of arr) {
           const fd = new FormData();
-          fd.append("file", f, f.name); // 서버 @RequestPart("file")
+          fd.append("file", f, f.name);
           const res = await fetch(`${API_BASE}/nodes/${nodeId}/files`, {
             method: "POST",
             body: fd,
@@ -174,7 +187,7 @@ export default function NodeDetailDock({
         }
         await loadFiles();
 
-        // 업로드가 1개 이상 성공했다고 가정하고, PDB 타입이면 SUCCESS로 승격
+        // 업로드 성공 가정: PDB 타입이면 SUCCESS로 승격
         if (node?.type === "PDB") {
           await markPdbSuccess();
         }
@@ -188,21 +201,80 @@ export default function NodeDetailDock({
     [nodeId, node?.type, loadFiles, markPdbSuccess]
   );
 
-  // 노드가 바뀌거나 도크가 열리면 파일 목록 새로고침
+  /** VISUALIZER: 입력(fetch) 테스트
+   * 필요한 백엔드 API (제안):
+   *   GET /api/projects/{projectId}/nodes/{visualizerId}/inputs
+   *   -> Response: NodeFileDTO[] (Visualizer로 "연결된 상류 노드들"의 파일 집합)
+   * 성공 & 파일 1개 이상 -> VISUALIZER를 SUCCESS로 업데이트
+   * 실패 또는 파일 없음 -> VISUALIZER를 FAILED로 업데이트
+   */
+  const testVisualizerFetch = useCallback(async () => {
+    if (!nodeId || !projectId) return;
+    setVizFetching(true);
+    setVizResult(null);
+    setVizFiles(null);
+    try {
+      const res = await fetch(`${API_BASE}/projects/${projectId}/nodes/${nodeId}/inputs`, {
+        method: "GET",
+      });
+      if (!res.ok) {
+        setVizResult("FAILED");
+        return;
+      }
+      const list: NodeFileDTO[] = await res.json().catch(() => []);
+      setVizFiles(Array.isArray(list) ? list : []);
+      const ok = Array.isArray(list) && list.length > 0;
+
+      // 상태 업데이트
+      const newStatus: NodeStatus = ok ? "SUCCESS" : "FAILED";
+      setVizResult(newStatus);
+      const put = await fetch(`${API_BASE}/projects/${projectId}/nodes/${nodeId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (!put.ok) {
+        console.error("[VISUALIZER status PUT] failed:", put.status);
+      } else {
+        onRequestRefreshNodes();
+      }
+    } catch (e) {
+      console.error("[Visualizer fetch test] error:", e);
+      setVizResult("FAILED");
+    } finally {
+      setVizFetching(false);
+    }
+  }, [nodeId, projectId, onRequestRefreshNodes]);
+
+  // 노드가 바뀌거나 도크가 열리면 초기화
   useEffect(() => {
     setLocalName(node?.name ?? "");
     setEditMode(false);
-    if (open && nodeId) {
+
+    setVizFetching(false);
+    setVizResult(null);
+    setVizFiles(null);
+
+    if (!open) {
+      setFiles(null);
+      return;
+    }
+    if (!node) return;
+
+    // VISUALIZER는 파일 업로드 UI를 사용하지 않음
+    if (node.type !== "VISUALIZER" && node.id) {
       loadFiles();
     } else {
       setFiles(null);
     }
-  }, [open, nodeId, node?.name, loadFiles]);
+  }, [open, node?.id, node?.name, node?.type, loadFiles, node]);
 
   if (!open || !node) return null;
 
+  const isVisualizer = node.type === "VISUALIZER";
+
   return (
-    <aside className="pointer-events-auto absolute right-4 top-4 z-[1000] w-[min(380px,92vw)] rounded-2xl bg-white/95 backdrop-blur shadow-xl ring-1 ring-zinc-200">
+    <aside className="pointer-events-auto absolute right-4 top-4 z-[1000] w-[min(420px,92vw)] rounded-2xl bg-white/95 backdrop-blur shadow-xl ring-1 ring-zinc-200">
       {/* 헤더 */}
       <div className="flex items-start justify-between gap-2 border-b border-zinc-200 px-4 py-3">
         <div className="flex flex-col">
@@ -289,67 +361,143 @@ export default function NodeDetailDock({
           </div>
         </div>
 
-        {/* 파일 업로드 + 목록 */}
-        <div className="rounded-lg border border-zinc-200 p-3">
-          <div className="mb-2 flex items-center justify-between">
-            <div className="inline-flex items-center gap-1 text-xs font-semibold text-zinc-800">
-              <FiPaperclip />
-              Files
-            </div>
-            <div className="flex items-center gap-2">
+        {/* ▼▼ VISUALIZER 전용: 파일 fetch 테스트 + 보기 버튼 ▼▼ */}
+        {isVisualizer && (
+          <div className="rounded-lg border border-zinc-200 p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <div className="inline-flex items-center gap-1 text-xs font-semibold text-zinc-800">
+                <FiDownloadCloud />
+                Inputs (from upstream)
+              </div>
               <button
-                onClick={loadFiles}
+                onClick={testVisualizerFetch}
                 className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-1 text-[11px] hover:bg-zinc-50 disabled:opacity-60"
-                disabled={loadingFiles}
-                title="Refresh file list"
+                disabled={vizFetching || !projectId}
+                title="Fetch input files"
               >
-                <FiRefreshCw className={loadingFiles ? "animate-spin" : ""} />
-                {loadingFiles ? "Refreshing…" : "Refresh"}
+                <FiRefreshCw className={vizFetching ? "animate-spin" : ""} />
+                {vizFetching ? "Checking…" : "Fetch"}
               </button>
-
-              <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-zinc-300 px-2 py-1 text-[11px] hover:bg-zinc-50">
-                <FiUpload />
-                {uploading ? "Uploading…" : "Upload"}
-                <input
-                  ref={inputRef}
-                  type="file"
-                  className="hidden"
-                  multiple
-                  onChange={(e) => {
-                    if (e.target.files && e.target.files.length > 0) {
-                      uploadFiles(e.target.files);
-                    }
-                  }}
-                  disabled={uploading}
-                />
-              </label>
             </div>
-          </div>
 
-          {/* 목록 */}
-          {files === null ? (
-            <div className="text-[11px] text-zinc-500">Loading…</div>
-          ) : files.length === 0 ? (
-            <div className="text-[11px] text-zinc-500">No files.</div>
-          ) : (
-            <ul className="space-y-1">
-              {files.map((f) => (
-                <li
-                  key={f.id}
-                  className="flex items-center justify-between rounded-md bg-zinc-50 px-2 py-1 text-[11px] ring-1 ring-zinc-200/70"
-                  title={f.storedPath}
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate font-medium text-zinc-700">{f.originalName}</div>
-                    <div className="truncate text-[10px] text-zinc-500">
-                      {f.contentType || "unknown"} • {formatBytes(f.size)} • {new Date(f.createdAt).toLocaleString()}
+            {/* 결과 상태 표시 */}
+            {vizResult && (
+              <div className="mb-2">
+                <StatusPill status={vizResult} />
+              </div>
+            )}
+
+            {/* 입력 파일 목록 */}
+            {vizFiles === null ? (
+              <div className="text-[11px] text-zinc-500">Press “Fetch” to test inputs.</div>
+            ) : vizFiles.length === 0 ? (
+              <div className="text-[11px] text-zinc-500">No upstream files.</div>
+            ) : (
+              <ul className="space-y-1">
+                {vizFiles.map((f) => (
+                  <li
+                    key={f.id}
+                    className="flex items-center justify-between rounded-md bg-zinc-50 px-2 py-1 text-[11px] ring-1 ring-zinc-200/70"
+                    title={f.storedPath}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-medium text-zinc-700">{f.originalName}</div>
+                      <div className="truncate text-[10px] text-zinc-500">
+                        {f.contentType || "unknown"} • {formatBytes(f.size)} • {new Date(f.createdAt).toLocaleString()}
+                      </div>
                     </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {/* 보기 버튼 (SUCCESS일 때만 노출) */}
+            {vizResult === "SUCCESS" && (
+              <div className="mt-3 flex justify-end">
+                <button
+                  onClick={onOpenVisualizer}
+                  className="inline-flex items-center gap-1 rounded-lg bg-zinc-900 px-3 py-1.5 text-xs text-white hover:opacity-90"
+                  title="Open NGL Visualizer"
+                >
+                  <FiPlayCircle />
+                  Visualizer 보기
+                </button>
+              </div>
+            )}
+
+            {/* 안내문구 */}
+            <p className="mt-3 text-[10px] text-zinc-500 leading-relaxed">
+              서버에서 Visualizer 입력을 제공하려면 아래 API를 구현하세요.
+              <br />
+              <code className="rounded bg-zinc-100 px-1 py-0.5">GET /api/projects/{'{projectId}'}/nodes/{'{visualizerId}'}/inputs</code>
+              <br />
+              응답은 <code>NodeFileDTO[]</code> 형태이며, Visualizer에 연결된 상류(예: SUCCESS 상태의 PDB) 노드들의 파일을 반환하면 됩니다.
+            </p>
+          </div>
+        )}
+
+        {/* ▼▼ 일반 노드(PDB 등) 파일 업로드/목록 (이전 동작 그대로) ▼▼ */}
+        {!isVisualizer && (
+          <div className="rounded-lg border border-zinc-200 p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <div className="inline-flex items-center gap-1 text-xs font-semibold text-zinc-800">
+                <FiPaperclip />
+                Files
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={loadFiles}
+                  className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-1 text-[11px] hover:bg-zinc-50 disabled:opacity-60"
+                  disabled={loadingFiles}
+                  title="Refresh file list"
+                >
+                  <FiRefreshCw className={loadingFiles ? "animate-spin" : ""} />
+                  {loadingFiles ? "Refreshing…" : "Refresh"}
+                </button>
+
+                <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-zinc-300 px-2 py-1 text-[11px] hover:bg-zinc-50">
+                  <FiUpload />
+                  {uploading ? "Uploading…" : "Upload"}
+                  <input
+                    ref={inputRef}
+                    type="file"
+                    className="hidden"
+                    multiple
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files.length > 0) {
+                        uploadFiles(e.target.files);
+                      }
+                    }}
+                    disabled={uploading}
+                  />
+                </label>
+              </div>
+            </div>
+
+            {files === null ? (
+              <div className="text-[11px] text-zinc-500">Loading…</div>
+            ) : files.length === 0 ? (
+              <div className="text-[11px] text-zinc-500">No files.</div>
+            ) : (
+              <ul className="space-y-1">
+                {files.map((f) => (
+                  <li
+                    key={f.id}
+                    className="flex items-center justify-between rounded-md bg-zinc-50 px-2 py-1 text-[11px] ring-1 ring-zinc-200/70"
+                    title={f.storedPath}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-medium text-zinc-700">{f.originalName}</div>
+                      <div className="truncate text-[10px] text-zinc-500">
+                        {f.contentType || "unknown"} • {formatBytes(f.size)} • {new Date(f.createdAt).toLocaleString()}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
 
         {/* 로그 */}
         <div className="flex items-center justify-between">

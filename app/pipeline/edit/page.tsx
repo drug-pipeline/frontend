@@ -1,4 +1,4 @@
-// app/pipeline/edit/page.tsx — real API wired (v5: Links GET+POST, Node Inputs 제거)
+// app/pipeline/edit/page.tsx — real API wired (+ Visualizer modal)
 "use client";
 
 import React, {
@@ -33,6 +33,7 @@ import { nodeTypes, type NodeData } from "@/app/components/pipeline2/NodeCard";
 import NodeDetailDock, {
   type MinimalNodeDTO,
 } from "@/app/components/pipeline2/NodeDetailDock";
+import NglWebapp from "@/app/components/NglWebapp";
 
 /* =========================
  * 서버 스펙 타입
@@ -154,17 +155,19 @@ function SimpleModal(props: {
   title: string;
   children: React.ReactNode;
   onClose: () => void;
+  wide?: boolean;
 }) {
-  const { open, title, children, onClose } = props;
+  const { open, title, children, onClose, wide } = props;
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[20000]">
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} aria-hidden />
       <div
-        className="absolute inset-0 bg-black/30"
-        onClick={onClose}
-        aria-hidden
-      />
-      <div className="absolute right-1/2 top-1/2 w-[480px] -translate-y-1/2 translate-x-1/2 rounded-2xl bg-white p-5 shadow-xl">
+        className={[
+          "absolute right-1/2 top-1/2 -translate-y-1/2 translate-x-1/2 rounded-2xl bg-white p-5 shadow-xl",
+          wide ? "w-[1080px] h-[720px] max-w-[94vw] max-h-[90vh]" : "w-[480px]",
+        ].join(" ")}
+      >
         <div className="mb-3 text-lg font-semibold">{title}</div>
         {children}
       </div>
@@ -201,9 +204,7 @@ function PipelinePage() {
   const [loadingNodes, setLoadingNodes] = useState<boolean>(false);
 
   // 서버 노드 캐시
-  const [serverNodeMap, setServerNodeMap] = useState<
-    Record<string, ServerNodeDTO>
-  >({});
+  const [serverNodeMap, setServerNodeMap] = useState<Record<string, ServerNodeDTO>>({});
 
   // Detail Dock 상태
   const [detailNode, setDetailNode] = useState<ServerNodeDTO | null>(null);
@@ -217,17 +218,40 @@ function PipelinePage() {
   const [renameInput, setRenameInput] = useState<string>("");
   const [renaming, setRenaming] = useState<boolean>(false);
 
+  // === Visualizer 모달 상태 ===
+  const [vizOpen, setVizOpen] = useState<boolean>(false);
+
+  // NGL viewer state (타입 충돌 방지를 위해 any)
+  const [viewerStage, setViewerStage] = useState<any>(null);
+  const [viewerComp, setViewerComp] = useState<any>(null);
+  const [viewerDefaultRep, setViewerDefaultRep] = useState<any>(null);
+  const [viewerHighlightRep, setViewerHighlightRep] = useState<any>(null);
+  const [viewerLastSele, setViewerLastSele] = useState<string | null>(null);
+
+  const viewerProp = useMemo(
+    () => ({
+      stage: viewerStage,
+      setStage: setViewerStage,
+      component: viewerComp,
+      setComponent: setViewerComp,
+      defaultRep: viewerDefaultRep,
+      setDefaultRep: setViewerDefaultRep,
+      highlightRep: viewerHighlightRep,
+      setHighlightRep: setViewerHighlightRep,
+      lastSele: viewerLastSele,
+      setLastSele: setViewerLastSele,
+    }),
+    [viewerStage, viewerComp, viewerDefaultRep, viewerHighlightRep, viewerLastSele]
+  );
+
   // 프로젝트명 로드
   useEffect(() => {
     const loadName = async () => {
       if (!projectId) return;
       try {
         setLoadingName(true);
-        const res = await fetch(`${API_BASE}/projects/${projectId}`, {
-          method: "GET",
-        });
-        if (!res.ok)
-          throw new Error(`GET /projects/${projectId} failed (${res.status})`);
+        const res = await fetch(`${API_BASE}/projects/${projectId}`, { method: "GET" });
+        if (!res.ok) throw new Error(`GET /projects/${projectId} failed (${res.status})`);
         const data: ProjectDTO = await res.json();
         if (data?.name) setWorkflowName(data.name);
       } catch (err) {
@@ -262,13 +286,8 @@ function PipelinePage() {
     if (!projectId) return;
     try {
       setLoadingNodes(true);
-      const res = await fetch(`${API_BASE}/projects/${projectId}/nodes`, {
-        method: "GET",
-      });
-      if (!res.ok)
-        throw new Error(
-          `GET /projects/${projectId}/nodes failed (${res.status})`
-        );
+      const res = await fetch(`${API_BASE}/projects/${projectId}/nodes`, { method: "GET" });
+      if (!res.ok) throw new Error(`GET /projects/${projectId}/nodes failed (${res.status})`);
       const list: ServerNodeDTO[] = await res.json();
 
       const flowNodes = (list ?? []).map(dtoToFlowNode);
@@ -288,19 +307,14 @@ function PipelinePage() {
   const refreshLinks = useCallback(async () => {
     if (!projectId) return;
     try {
-      const res = await fetch(`${API_BASE}/projects/${projectId}/links`, {
-        method: "GET",
-      });
+      const res = await fetch(`${API_BASE}/projects/${projectId}/links`, { method: "GET" });
       if (!res.ok) {
-        console.error(
-          `[Refresh Links] GET /projects/${projectId}/links -> ${res.status}`
-        );
+        console.error(`[Refresh Links] GET /projects/${projectId}/links -> ${res.status}`);
         setEdges([]);
         return;
       }
       const list: LinkResponse[] = await res.json();
 
-      // 서버 링크 -> React Flow Edge
       const serverEdges: Edge[] = (list ?? []).map((l) => ({
         id: String(l.id),
         source: String(l.sourceNodeId),
@@ -316,7 +330,7 @@ function PipelinePage() {
     }
   }, [projectId, setEdges]);
 
-  // 최초 로드: 노드 -> 링크 순으로 불러오기
+  // 최초 로드
   useEffect(() => {
     if (!projectId) return;
     (async () => {
@@ -335,13 +349,10 @@ function PipelinePage() {
       }
       const pos = { x: 140 + Math.random() * 520, y: 100 + Math.random() * 360 };
 
-      const nameForNode =
-        spec.key === "visualizer" ? "Visualizer" : spec.title;
-
       const payload = {
         projectId,
         type: keyToType[spec.key],
-        name: spec.title,
+        name: spec.key === "visualizer" ? "Visualizer" : spec.title,
         status: "PENDING" as NodeStatus,
         x: Math.round(pos.x),
         y: Math.round(pos.y),
@@ -354,10 +365,7 @@ function PipelinePage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
-        if (!res.ok)
-          throw new Error(
-            `POST /projects/${projectId}/nodes failed (${res.status})`
-          );
+        if (!res.ok) throw new Error(`POST /projects/${projectId}/nodes failed (${res.status})`);
         await refreshNodes();
       } catch (err) {
         console.error("[Create Node] error:", err);
@@ -367,7 +375,7 @@ function PipelinePage() {
     [projectId, refreshNodes]
   );
 
-  // ===== 링크 생성 (POST /api/projects/{projectId}/links) + 에지 추가 =====
+  // 링크 생성 (POST /api/projects/{projectId}/links)
   const postLinkAndAddEdge = useCallback(
     async (conn: Connection | Edge) => {
       if (!projectId) return;
@@ -375,12 +383,10 @@ function PipelinePage() {
       const targetId = conn.target;
       if (!sourceId || !targetId) return;
 
-      // 유효성 체크
       const source = nodes.find((n) => n.id === sourceId);
       const target = nodes.find((n) => n.id === targetId);
       if (!allowConnection(source, target)) return;
 
-      // 서버에 링크 생성
       try {
         const body: CreateLinkBody = {
           projectId,
@@ -405,66 +411,44 @@ function PipelinePage() {
           createdAt: new Date().toISOString(),
         }));
 
-        // postLinkAndAddEdge 내부, 서버에 링크 생성 성공 후 (setEdges 호출 뒤나 전에) 추가:
+        // 시각화 성공 동기화 (PDB SUCCESS + VISUALIZER 쌍이면 VISUALIZER도 SUCCESS)
         try {
           const s = serverNodeMap[String(sourceId)];
           const t = serverNodeMap[String(targetId)];
-
           const isVisualizerPdbPair =
             (s?.type === "VISUALIZER" && t?.type === "PDB" && t?.status === "SUCCESS") ||
             (t?.type === "VISUALIZER" && s?.type === "PDB" && s?.status === "SUCCESS");
-
           if (isVisualizerPdbPair && projectId) {
-            // Visualizer 쪽 id 찾기
-            const vizId =
-              s?.type === "VISUALIZER" ? s.id : t?.type === "VISUALIZER" ? t.id : undefined;
+            const vizId = s?.type === "VISUALIZER" ? s.id : t?.id;
             if (vizId) {
               const res2 = await fetch(`${API_BASE}/projects/${projectId}/nodes/${vizId}`, {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ status: "SUCCESS" }),
               });
-              if (!res2.ok) {
-                console.error("[Visualizer->SUCCESS] PUT failed:", res2.status);
-              } else {
-                // UI 갱신
-                await refreshNodes();
-                await refreshLinks();
-              }
+              if (!res2.ok) console.error("[Visualizer->SUCCESS] PUT failed:", res2.status);
+              await refreshNodes();
+              await refreshLinks();
             }
           }
         } catch (e) {
           console.error("[Post-link Visualizer SUCCESS sync] error:", e);
         }
 
-
-        // 로컬 에지 반영 (즉시 반영)
         setEdges((eds) =>
-          addEdge(
-            {
-              ...conn,
-              id: String(created.id), // 서버 id 사용
-              animated: true,
-              style: { strokeWidth: 2 },
-            } as any,
-            eds
-          )
+          addEdge({ ...conn, id: String(created.id), animated: true, style: { strokeWidth: 2 } } as any, eds)
         );
       } catch (err) {
         console.error("[Create Link] error:", err);
         alert("링크 생성 중 오류가 발생했습니다.");
       }
     },
-    [projectId, nodes, setEdges]
+    [projectId, nodes, setEdges, serverNodeMap, refreshNodes, refreshLinks]
   );
 
-  // React Flow onConnect 핸들러
-  const onConnect = useCallback(
-    async (params: Connection | Edge) => {
-      await postLinkAndAddEdge(params);
-    },
-    [postLinkAndAddEdge]
-  );
+  const onConnect = useCallback(async (params: Connection | Edge) => {
+    await postLinkAndAddEdge(params);
+  }, [postLinkAndAddEdge]);
 
   const isValidConnection = useCallback(
     (conn: Connection): boolean => {
@@ -475,7 +459,6 @@ function PipelinePage() {
     [nodes]
   );
 
-  // Header 동작 (명시적 Save — 현재는 콘솔)
   const onSave = useCallback(() => {
     const payload = {
       name: workflowName,
@@ -485,15 +468,13 @@ function PipelinePage() {
         position,
         data: { key: data.key, title: data.title, status: data.status },
       })),
-      edges: edges.map(
-        ({ id, source, target, sourceHandle, targetHandle }) => ({
-          id,
-          source,
-          target,
-          sourceHandle,
-          targetHandle,
-        })
-      ),
+      edges: edges.map(({ id, source, target, sourceHandle, targetHandle }) => ({
+        id,
+        source,
+        target,
+        sourceHandle,
+        targetHandle,
+      })),
       savedAt: new Date().toISOString(),
     };
     console.log("[Pipeline Save]", payload);
@@ -510,11 +491,8 @@ function PipelinePage() {
 
     try {
       setDuplicating(true);
-      const getRes = await fetch(`${API_BASE}/projects/${projectId}`, {
-        method: "GET",
-      });
-      if (!getRes.ok)
-        throw new Error(`GET /projects/${projectId} failed (${getRes.status})`);
+      const getRes = await fetch(`${API_BASE}/projects/${projectId}`, { method: "GET" });
+      if (!getRes.ok) throw new Error(`GET /projects/${projectId} failed (${getRes.status})`);
       const original: ProjectDTO = await getRes.json();
       const nameForCopy = (original?.name || workflowName) + " (Copy)";
 
@@ -523,14 +501,9 @@ function PipelinePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: nameForCopy }),
       });
-      if (!postRes.ok)
-        throw new Error(`POST /projects failed (${postRes.status})`);
-      const created: ProjectDTO = await postRes
-        .json()
-        .catch(() => ({ id: -1, name: nameForCopy }));
-      alert(
-        `프로젝트가 복제되었습니다.\n[${created.name}] (id: ${created.id ?? "?"})`
-      );
+      if (!postRes.ok) throw new Error(`POST /projects failed (${postRes.status})`);
+      const created: ProjectDTO = await postRes.json().catch(() => ({ id: -1, name: nameForCopy }));
+      alert(`프로젝트가 복제되었습니다.\n[${created.name}] (id: ${created.id ?? "?"})`);
     } catch (err) {
       console.error("[Duplicate Project] error:", err);
       alert("프로젝트 복제에 실패했습니다.");
@@ -545,20 +518,13 @@ function PipelinePage() {
       alert("Project ID가 없습니다. URL에 ?id=... 를 지정하세요.");
       return;
     }
-    const ok = confirm(
-      `정말 삭제할까요?\n\n${workflowName}\n이 작업은 되돌릴 수 없습니다.`
-    );
+    const ok = confirm(`정말 삭제할까요?\n\n${workflowName}\n이 작업은 되돌릴 수 없습니다.`);
     if (!ok) return;
 
     try {
       setDeleting(true);
-      const res = await fetch(`${API_BASE}/projects/${projectId}`, {
-        method: "DELETE",
-      });
-      if (!res.ok)
-        throw new Error(
-          `DELETE /projects/${projectId} failed (${res.status})`
-        );
+      const res = await fetch(`${API_BASE}/projects/${projectId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(`DELETE /projects/${projectId} failed (${res.status})`);
       alert("프로젝트가 삭제되었습니다.");
       router.push("/pipeline");
     } catch (err) {
@@ -575,11 +541,8 @@ function PipelinePage() {
       if (!projectId || !nodeId) return;
       setReloadingDetail(true);
       try {
-        const res = await fetch(`${API_BASE}/nodes/${nodeId}`, {
-          method: "GET",
-        });
-        if (!res.ok)
-          throw new Error(`GET node ${nodeId} failed (${res.status})`);
+        const res = await fetch(`${API_BASE}/nodes/${nodeId}`, { method: "GET" });
+        if (!res.ok) throw new Error(`GET node ${nodeId} failed (${res.status})`);
         const dto: ServerNodeDTO = await res.json();
 
         setDetailNode(dto);
@@ -593,17 +556,13 @@ function PipelinePage() {
     [projectId]
   );
 
-  // 로그 로드 (명시적 버튼) — 서버 미구현 시 404 graceful
+  // 로그 로드 (404 허용)
   const loadNodeLogs = useCallback(
     async (nodeId: string) => {
       if (!projectId || !nodeId) return;
       setRefreshingLogs(true);
       try {
-        const res = await fetch(
-          `${API_BASE}/projects/${projectId}/nodes/${nodeId}/logs`,
-          { method: "GET" }
-        );
-
+        const res = await fetch(`${API_BASE}/projects/${projectId}/nodes/${nodeId}/logs`, { method: "GET" });
         if (res.status === 404) {
           setLogs([]);
           return;
@@ -659,7 +618,7 @@ function PipelinePage() {
         });
         if (!res.ok) throw new Error(`PUT node ${id} failed (${res.status})`);
         await refreshNodes();
-        await refreshLinks(); // edge 재구성 대비
+        await refreshLinks();
       } catch (err) {
         console.error("[Rename Node] error:", err);
         alert("이름 변경에 실패했습니다.");
@@ -690,10 +649,7 @@ function PipelinePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
       });
-      if (!res.ok)
-        throw new Error(
-          `PUT /projects/${projectId} failed (${res.status})`
-        );
+      if (!res.ok) throw new Error(`PUT /projects/${projectId} failed (${res.status})`);
       setWorkflowName(name);
       setRenameOpen(false);
     } catch (err) {
@@ -745,16 +701,16 @@ function PipelinePage() {
               nodes={
                 selectedNodeId
                   ? nodes.map((n) =>
-                    n.id === selectedNodeId
-                      ? n
-                      : {
-                        ...n,
-                        style: {
-                          opacity: 0.9,
-                          filter: "grayscale(0.12) brightness(0.98)",
-                        },
-                      }
-                  )
+                      n.id === selectedNodeId
+                        ? n
+                        : {
+                            ...n,
+                            style: {
+                              opacity: 0.9,
+                              filter: "grayscale(0.12) brightness(0.98)",
+                            },
+                          }
+                    )
                   : nodes
               }
               edges={edges}
@@ -788,20 +744,26 @@ function PipelinePage() {
               if (selectedNodeId) reloadDetail(selectedNodeId);
             }}
             reloadingDetail={reloadingDetail}
-            projectId={projectId}                      // ← 추가
-            onRequestRefreshNodes={async () => {       // ← 추가 (PDB SUCCESS 반영 후 갱신)
+            projectId={projectId}
+            onRequestRefreshNodes={async () => {
               await refreshNodes();
               await refreshLinks();
             }}
+            onOpenVisualizer={() => setVizOpen(true)}
           />
 
+          {/* Visualizer 모달 (NGL) */}
+          <SimpleModal open={vizOpen} title="Visualizer" onClose={() => setVizOpen(false)} wide>
+            <div className="h-[calc(100%-1.5rem)]">
+              {/* NGL 뷰어 영역 (full fill) */}
+              <div className="relative h-full w-full">
+                <NglWebapp viewer={viewerProp as any} />
+              </div>
+            </div>
+          </SimpleModal>
 
           {/* 워크플로우 이름 변경 모달 */}
-          <SimpleModal
-            open={renameOpen}
-            title="Rename Workflow"
-            onClose={() => setRenameOpen(false)}
-          >
+          <SimpleModal open={renameOpen} title="Rename Workflow" onClose={() => setRenameOpen(false)}>
             <div className="space-y-4">
               <input
                 className="w-full rounded-lg border border-zinc-300 px-3 py-2 outline-none focus:border-zinc-500"
