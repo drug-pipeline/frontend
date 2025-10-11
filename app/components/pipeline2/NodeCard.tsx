@@ -26,10 +26,12 @@ export type ModuleKey =
   | "pdb-input"
   | "compound-input"
   | "visualizer"
+  | "vis-secondary"   // ← 이 줄 추가
   | "distance-map"
   | "admet"
   | "uniprot-info"
   | "pdb-info";
+
 
 export type NodeData = {
   key: ModuleKey;
@@ -38,7 +40,7 @@ export type NodeData = {
 };
 
 /* ===== 시각화 규칙 ===== */
-const VISUALIZER_KEYS: Readonly<ModuleKey[]> = ["visualizer", "distance-map"];
+const VISUALIZER_KEYS: Readonly<ModuleKey[]> = ["visualizer", "vis-secondary", "distance-map"];
 
 /* ===== 상태별 스타일/아이콘 ===== */
 const statusStyle = (status: NodeStatus) => {
@@ -88,6 +90,7 @@ const KeyIcon: Record<ModuleKey, React.ComponentType<any>> = {
   "pdb-input": FiPackage,
   "compound-input": FiPackage,
   visualizer: FiEye,
+  "vis-secondary": FiEye,
   "distance-map": FiMap,
   admet: FiPackage,
   "uniprot-info": FiInfo,

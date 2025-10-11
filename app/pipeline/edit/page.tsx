@@ -1,4 +1,4 @@
-// app/pipeline/edit/page.tsx — real API wired (+ Visualizer modal)
+// app/pipeline/edit/page.tsx — real API wired (+ Visualizer & Secondary modal)
 "use client";
 
 import React, {
@@ -29,11 +29,12 @@ import ModuleSidebar, {
   MODULES,
   ModuleSpec,
 } from "@/app/components/pipeline2/Modules";
-import { nodeTypes, type NodeData } from "@/app/components/pipeline2/NodeCard";
+import { nodeTypes, type NodeData, type ModuleKey } from "@/app/components/pipeline2/NodeCard";
 import NodeDetailDock, {
   type MinimalNodeDTO,
 } from "@/app/components/pipeline2/NodeDetailDock";
 import NglWebapp from "@/app/components/NglWebapp";
+import SecondaryStructurePanel from "@/app/components/SecondaryStructurePanel";
 
 /* =========================
  * 서버 스펙 타입
@@ -44,6 +45,7 @@ type ServerNodeType =
   | "PDB"
   | "COMPOUND"
   | "VISUALIZER"
+  | "SECONDARY"
   | "DISTANCE_MAP"
   | "ADMET"
   | "UNIPROT_INFO"
@@ -89,21 +91,13 @@ type NodeLogsDTO = {
 /* =========================
  * 모듈 키 <-> 서버 타입 매핑
  * =======================*/
-// ✅ 그대로(또는 원복)
-export type ModuleKey =
-  | "pdb-input"
-  | "compound-input"
-  | "visualizer"
-  | "distance-map"
-  | "admet"
-  | "uniprot-info"
-  | "pdb-info";
 
 
 const keyToType: Record<string, ServerNodeType> = {
   "pdb-input": "PDB",
   "compound-input": "COMPOUND",
   visualizer: "VISUALIZER",
+  "vis-secondary": "SECONDARY",
   "distance-map": "DISTANCE_MAP",
   admet: "ADMET",
   "uniprot-info": "UNIPROT_INFO",
@@ -114,6 +108,7 @@ const typeToKey: Record<ServerNodeType, ModuleKey> = {
   PDB: "pdb-input",
   COMPOUND: "compound-input",
   VISUALIZER: "visualizer",
+  SECONDARY: "vis-secondary",
   DISTANCE_MAP: "distance-map",
   ADMET: "admet",
   UNIPROT_INFO: "uniprot-info",
@@ -134,6 +129,7 @@ function allowConnection(
   if (
     sKey === "pdb-input" &&
     (tKey === "visualizer" ||
+      tKey === "vis-secondary" ||
       tKey === "distance-map" ||
       tKey === "pdb-info" ||
       tKey === "uniprot-info")
@@ -220,8 +216,9 @@ function PipelinePage() {
   const [renameInput, setRenameInput] = useState<string>("");
   const [renaming, setRenaming] = useState<boolean>(false);
 
-  // === Visualizer 모달 ===
+  // === Visualizer/Secondary 모달 ===
   const [vizOpen, setVizOpen] = useState<boolean>(false);
+  const [secondaryOpen, setSecondaryOpen] = useState<boolean>(false);
 
   // NGL viewer state (타입 충돌 방지를 위해 any)
   const [viewerStage, setViewerStage] = useState<any>(null);
@@ -267,31 +264,29 @@ function PipelinePage() {
 
   // DTO -> Flow Node
   const dtoToFlowNode = useCallback((dto: ServerNodeDTO): Node<NodeData> => {
-  const key = typeToKey[dto.type as keyof typeof typeToKey] ?? "pdb-input";
-  const safeStatus: NodeStatus =
-    dto.status === "PENDING" ||
-    dto.status === "RUNNING" ||
-    dto.status === "SUCCESS" ||
-    dto.status === "FAILED"
-      ? dto.status
-      : "PENDING";
+    const key = typeToKey[dto.type as keyof typeof typeToKey] ?? "pdb-input";
+    const safeStatus: NodeStatus =
+      dto.status === "PENDING" ||
+      dto.status === "RUNNING" ||
+      dto.status === "SUCCESS" ||
+      dto.status === "FAILED"
+        ? dto.status
+        : "PENDING";
 
-  return {
-    id: String(dto.id),
-    type: "card",
-    position: { x: dto.x ?? 0, y: dto.y ?? 0 },
-    data: {
-      key,
-      title: dto.name || key,
-      status: safeStatus,
-    },
-    sourcePosition: Position.Right,
-    targetPosition: Position.Left,
-    selectable: true,
-  };
-}, []);
-
-
+    return {
+      id: String(dto.id),
+      type: "card",
+      position: { x: dto.x ?? 0, y: dto.y ?? 0 },
+      data: {
+        key,
+        title: dto.name || key,
+        status: safeStatus,
+      },
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
+      selectable: true,
+    };
+  }, []);
 
   // 노드 목록 새로고침
   const refreshNodes = useCallback(async () => {
@@ -349,8 +344,7 @@ function PipelinePage() {
       await refreshNodes();
       await refreshLinks();
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId]);
+  }, [projectId, refreshNodes, refreshLinks]);
 
   // 노드 생성
   const createNode = useCallback(
@@ -423,28 +417,28 @@ function PipelinePage() {
           createdAt: new Date().toISOString(),
         }));
 
-        // 시각화 성공 동기화 (PDB SUCCESS + VISUALIZER 쌍이면 VISUALIZER도 SUCCESS)
+        // 시각화 성공 동기화 (PDB SUCCESS + VISUALIZER/SECONDARY 쌍이면 대상도 SUCCESS)
         try {
           const s = serverNodeMap[String(sourceId)];
           const t = serverNodeMap[String(targetId)];
-          const isVisualizerPdbPair =
-            (s?.type === "VISUALIZER" && t?.type === "PDB" && t?.status === "SUCCESS") ||
-            (t?.type === "VISUALIZER" && s?.type === "PDB" && s?.status === "SUCCESS");
-          if (isVisualizerPdbPair && projectId) {
-            const vizId = s?.type === "VISUALIZER" ? s.id : t?.id;
-            if (vizId) {
-              const res2 = await fetch(`${API_BASE}/projects/${projectId}/nodes/${vizId}`, {
+          const isVisPair =
+            ((s?.type === "VISUALIZER" || s?.type === "SECONDARY") && t?.type === "PDB" && t?.status === "SUCCESS") ||
+            ((t?.type === "VISUALIZER" || t?.type === "SECONDARY") && s?.type === "PDB" && s?.status === "SUCCESS");
+          if (isVisPair && projectId) {
+            const targetVisId = (s?.type === "VISUALIZER" || s?.type === "SECONDARY") ? s.id : t?.id;
+            if (targetVisId) {
+              const res2 = await fetch(`${API_BASE}/projects/${projectId}/nodes/${targetVisId}`, {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ status: "SUCCESS" }),
               });
-              if (!res2.ok) console.error("[Visualizer->SUCCESS] PUT failed:", res2.status);
+              if (!res2.ok) console.error("[Vis/Secondary->SUCCESS] PUT failed:", res2.status);
               await refreshNodes();
               await refreshLinks();
             }
           }
         } catch (e) {
-          console.error("[Post-link Visualizer SUCCESS sync] error:", e);
+          console.error("[Post-link Visual SUCCESS sync] error:", e);
         }
 
         setEdges((eds) =>
@@ -761,19 +755,34 @@ function PipelinePage() {
               await refreshNodes();
               await refreshLinks();
             }}
-            // ✅ NodeDetailDock 내부에서 sessionStorage에 'ngl.pdbUrl'을 저장하고
-            //    단순히 모달만 열어주면 됨 (파라미터 필요 없음)
-            onOpenVisualizer={() => {
-              setVizOpen(true);
-            }}
+            onOpenVisualizer={() => { setVizOpen(true); }}
+            onOpenSecondary={() => { setSecondaryOpen(true); }}
           />
 
           {/* Visualizer 모달 (NGL) */}
           <SimpleModal open={vizOpen} title="Visualizer" onClose={() => setVizOpen(false)} wide>
             <div className="h-[calc(100%-1.5rem)]">
               <div className="relative h-full w-full">
-                {/* ✅ NglWebapp은 viewer만 필요 (pdbUrl prop 제거) */}
                 <NglWebapp viewer={viewerProp as any} />
+              </div>
+            </div>
+          </SimpleModal>
+
+          {/* Secondary + NGL Split Modal */}
+          <SimpleModal
+            open={secondaryOpen}
+            title="Visualizer + Secondary Structure"
+            onClose={() => setSecondaryOpen(false)}
+            wide
+          >
+            <div className="h-[calc(100%-1.5rem)]">
+              <div className="grid h-full w-full grid-cols-2 gap-4">
+                <div className="relative h-full w-full rounded-xl ring-1 ring-zinc-200 overflow-hidden">
+                  <NglWebapp viewer={viewerProp as any} />
+                </div>
+                <div className="relative h-full w-full rounded-xl ring-1 ring-zinc-200 overflow-auto p-3">
+                  <SecondaryStructurePanel viewer={viewerProp as any} />
+                </div>
               </div>
             </div>
           </SimpleModal>
