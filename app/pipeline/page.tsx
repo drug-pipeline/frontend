@@ -34,29 +34,6 @@ type Template = {
     tags: string[];
 };
 
-const DUMMY_WORKFLOWS: Workflow[] = [
-    {
-        id: "wf_001",
-        name: "Kinase Binding Screen",
-        updatedAt: "2025-10-08T12:10:00Z",
-        nodes: 8,
-        tags: ["Visualizer", "Filter"],
-    },
-    {
-        id: "wf_002",
-        name: "ADMET Batch Eval",
-        updatedAt: "2025-10-06T09:22:00Z",
-        nodes: 5,
-        tags: ["ADMET", "Table"],
-    },
-    {
-        id: "wf_003",
-        name: "Pocket Scan Prototype",
-        updatedAt: "2025-10-04T18:40:00Z",
-        nodes: 6,
-        tags: ["NGL", "Pocket"],
-    },
-];
 
 const TEMPLATES: Template[] = [
     {
@@ -139,7 +116,7 @@ export default function PipelineHomePage() {
     const [browseOpen, setBrowseOpen] = useState(false);
     const [query, setQuery] = useState("");
 
-    const [projects, setProjects] = useState<Workflow[]>(DUMMY_WORKFLOWS);
+    const [projects, setProjects] = useState<Workflow[]>([]);
 
     const [accountOpen, setAccountOpen] = useState(false);
     const accountRef = useRef<HTMLDivElement | null>(null);
@@ -161,7 +138,7 @@ export default function PipelineHomePage() {
                 }));
 
                 // 더미데이터와 병합해서 보여주기
-                setProjects([...fetched, ...DUMMY_WORKFLOWS]);
+                setProjects(fetched);
             } catch (err) {
                 console.error("❌ Failed to fetch projects:", err);
             }
