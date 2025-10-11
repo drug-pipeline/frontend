@@ -29,7 +29,9 @@ export type ModuleSpec = {
 export const MODULES: ModuleSpec[] = [
   { key: "pdb-input", title: "PDB Input", category: "Input", Icon: FiPackage, tint: "bg-emerald-50" },
   { key: "compound-input", title: "Compound Input", category: "Input", Icon: FiPackage, tint: "bg-sky-50" },
-  { key: "visualizer", title: "Visualizer (NGL)", category: "Visualizer", Icon: FiEye, tint: "bg-blue-50" },
+  { key: "visualizer", title: "Visualizer", category: "Visualizer", Icon: FiEye, tint: "bg-blue-50" },
+  { key: "visualizer", title: "Secondary Structure", category: "Visualizer", Icon: FiEye, tint: "bg-blue-50" },
+  { key: "visualizer", title: "Interaction Graph", category: "Visualizer", Icon: FiEye, tint: "bg-blue-50" },
   { key: "distance-map", title: "Distance Map", category: "Visualizer", Icon: FiMap, tint: "bg-indigo-50" },
   { key: "admet", title: "ADMET", category: "Analysis", Icon: FiPackage, tint: "bg-orange-50" },
   { key: "uniprot-info", title: "UniProt Info", category: "Info", Icon: FiInfo, tint: "bg-amber-50" },
