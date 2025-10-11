@@ -404,8 +404,8 @@ export default function PipelineHomePage() {
                             <button
                                 onClick={() => setActiveTab("projects")}
                                 className={`relative z-10 px-4 py-1.5 text-sm rounded-md transition-colors duration-200 min-w-[110px] text-center ${activeTab === "projects"
-                                        ? "text-zinc-900"
-                                        : "text-zinc-600 hover:text-zinc-800"
+                                    ? "text-zinc-900"
+                                    : "text-zinc-600 hover:text-zinc-800"
                                     }`}
                                 aria-pressed={activeTab === "projects"}
                             >
@@ -414,8 +414,8 @@ export default function PipelineHomePage() {
                             <button
                                 onClick={() => setActiveTab("templates")}
                                 className={`relative z-10 px-4 py-1.5 text-sm rounded-md transition-colors duration-200 min-w-[110px] text-center ${activeTab === "templates"
-                                        ? "text-zinc-900"
-                                        : "text-zinc-600 hover:text-zinc-800"
+                                    ? "text-zinc-900"
+                                    : "text-zinc-600 hover:text-zinc-800"
                                     }`}
                                 aria-pressed={activeTab === "templates"}
                             >
@@ -428,7 +428,32 @@ export default function PipelineHomePage() {
                     {activeTab === "projects" ? (
                         <section>
                             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                                {projects.map((wf) => (
+                                {projects.length === 0 ? (
+                                    <div className="col-span-full rounded-xl border border-dashed border-zinc-300 p-12 text-center text-zinc-600">
+                                        <p className="text-base font-medium">There are no existing projects.</p>
+                                        <p className="mt-2 text-sm">Create your own workflow!</p>
+                                        <button
+                                            onClick={async () => {
+                                                try {
+                                                    const res = await fetch("/api/projects", {
+                                                        method: "POST",
+                                                        headers: { "Content-Type": "application/json" },
+                                                        body: JSON.stringify({ name: "My First Project" }),
+                                                    });
+                                                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                                                    const data = await res.json();
+                                                    window.location.href = `/pipeline/edit?id=${data.id}`;
+                                                } catch (err) {
+                                                    alert("프로젝트 생성 실패");
+                                                }
+                                            }}
+                                            className="mt-4 inline-flex items-center gap-2 rounded-lg bg-black px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800"
+                                        >
+                                            <HiPlus className="h-4 w-4" />
+                                            Create New Project
+                                        </button>
+                                    </div>
+                                ) : (projects.map((wf) => (
                                     <Link
                                         key={wf.id}
                                         href={`/pipeline/edit?id=${encodeURIComponent(wf.id)}`}
@@ -498,7 +523,7 @@ export default function PipelineHomePage() {
                                             ))}
                                         </div>
                                     </Link>
-                                ))}
+                                )))}
                             </div>
                         </section>
                     ) : (
