@@ -26,7 +26,7 @@ export async function GET(
       const text = await r.text();
       return NextResponse.json(
         { error: `HTTP ${r.status} ${r.statusText}`, detail: text.slice(0, 300) },
-        { status: r.status }
+        { status: r.status } 
       );
     }
     if (!ct.includes("application/json")) {
