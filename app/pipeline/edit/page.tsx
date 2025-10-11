@@ -46,6 +46,55 @@ const MODULES: ModuleSpec[] = [
 const VISUALIZER_KEYS: Readonly<ModuleKey[]> = ["visualizer", "distance-map"];
 
 /* =========================
+ * 서버 NodeDTO & 매핑
+ * =======================*/
+type ServerNodeType =
+  | "PDB"
+  | "COMPOUND"
+  | "VISUALIZER"
+  | "DISTANCE_MAP"
+  | "ADMET"
+  | "UNIPROT_INFO"
+  | "PDB_INFO";
+
+type ServerNodeStatus = "PENDING" | "READY" | "FAILED";
+
+type ServerNodeDTO = {
+  id: number;
+  projectId: number;
+  type: ServerNodeType;
+  name: string;
+  status: ServerNodeStatus;
+  x: number;
+  y: number;
+  meta?: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+// ModuleKey -> ServerNodeType
+const keyToType: Record<ModuleKey, ServerNodeType> = {
+  "pdb-input": "PDB",
+  "compound-input": "COMPOUND",
+  "visualizer": "VISUALIZER",
+  "distance-map": "DISTANCE_MAP",
+  "admet": "ADMET",
+  "uniprot-info": "UNIPROT_INFO",
+  "pdb-info": "PDB_INFO",
+};
+
+// ServerNodeType -> ModuleKey (모듈 타이틀/색상/이모지는 MODULES에서 조회)
+const typeToKey: Record<ServerNodeType, ModuleKey> = {
+  PDB: "pdb-input",
+  COMPOUND: "compound-input",
+  VISUALIZER: "visualizer",
+  DISTANCE_MAP: "distance-map",
+  ADMET: "admet",
+  UNIPROT_INFO: "uniprot-info",
+  PDB_INFO: "pdb-info",
+};
+
+/* =========================
  * 공용 모달 (컴팩트)
  * =======================*/
 function Modal({
@@ -223,6 +272,9 @@ function PipelinePage() {
   const [renameInput, setRenameInput] = useState<string>(workflowName);
   const [renaming, setRenaming] = useState<boolean>(false);
 
+  // 서버 노드 로딩 상태
+  const [loadingNodes, setLoadingNodes] = useState<boolean>(false);
+
   // 이름 로드 (GET /projects/{id})
   useEffect(() => {
     const loadName = async () => {
@@ -244,6 +296,52 @@ function PipelinePage() {
     };
     loadName();
   }, [projectId]);
+
+  // 서버 → ReactFlow 노드 변환
+  const dtoToFlowNode = useCallback(
+    (dto: ServerNodeDTO): Node<NodeData> => {
+      const key = typeToKey[dto.type];
+      const meta = MODULES.find(m => m.key === key);
+      return {
+        id: String(dto.id),
+        type: "card",
+        position: { x: dto.x ?? 0, y: dto.y ?? 0 },
+        data: {
+          key,
+          title: dto.name ?? meta?.title ?? key,
+          color: meta?.color,
+          emoji: meta?.emoji,
+          onOpen: (k: ModuleKey) => setModalKey(k),
+        },
+        sourcePosition: Position.Right,
+        targetPosition: Position.Left,
+      };
+    },
+    []
+  );
+
+  // 노드 목록 새로고침 (GET /api/projects/{id}/nodes)
+  const refreshNodes = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      setLoadingNodes(true);
+      const res = await fetch(`${API_BASE}/projects/${projectId}/nodes`, { method: "GET" });
+      if (!res.ok) throw new Error(`GET /projects/${projectId}/nodes failed (${res.status})`);
+      const list: ServerNodeDTO[] = await res.json();
+      const flowNodes = (list ?? []).map(dtoToFlowNode);
+      setNodes(flowNodes);
+    } catch (err) {
+      console.error("[Refresh Nodes] error:", err);
+    } finally {
+      setLoadingNodes(false);
+    }
+  }, [projectId, dtoToFlowNode, setNodes]);
+
+  // 최초 진입 시 노드 로드
+  useEffect(() => {
+    if (!projectId) return;
+    refreshNodes();
+  }, [projectId, refreshNodes]);
 
   const openRename = useCallback(() => {
     setRenameInput(workflowName);
@@ -277,29 +375,44 @@ function PipelinePage() {
     }
   }, [renameInput, projectId]);
 
-  // 노드 생성
+  // 노드 생성: 서버 저장(POST) → 즉시 재조회(GET)
   const createNode = useCallback(
-    (spec: ModuleSpec) => {
-      const id = `${spec.key}-${Date.now()}-${Math.round(Math.random() * 9999)}`;
+    async (spec: ModuleSpec) => {
+      if (!projectId) {
+        alert("Project ID가 없습니다. URL에 ?id=... 를 지정하세요.");
+        return;
+      }
+
+      // 화면상 무작위 위치 (초기 배치)
       const pos = { x: 140 + Math.random() * 520, y: 100 + Math.random() * 360 };
 
-      const node: Node<NodeData> = {
-        id,
-        type: "card",
-        position: pos,
-        data: {
-          key: spec.key,
-          title: spec.title,
-          color: spec.color,
-          emoji: spec.emoji,
-          onOpen: (key: ModuleKey) => setModalKey(key),
-        },
-        sourcePosition: Position.Right,
-        targetPosition: Position.Left,
+      // 서버 요청용 페이로드
+      const payload = {
+        projectId,
+        type: keyToType[spec.key],
+        name: spec.title,
+        status: "PENDING" as ServerNodeStatus,
+        x: Math.round(pos.x),
+        y: Math.round(pos.y),
+        meta: {}, // 필요 시 확장
       };
-      setNodes((prev) => [...prev, node]);
+
+      try {
+        const res = await fetch(`${API_BASE}/projects/${projectId}/nodes`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error(`POST /projects/${projectId}/nodes failed (${res.status})`);
+
+        // 서버 반영 후 동기화
+        await refreshNodes();
+      } catch (err) {
+        console.error("[Create Node] error:", err);
+        alert("노드 생성에 실패했습니다.");
+      }
     },
-    [setNodes]
+    [projectId, refreshNodes]
   );
 
   // 엣지 연결
@@ -410,7 +523,7 @@ function PipelinePage() {
         <b>{modalTitle}</b> placeholder. 실제 UI/예제는 다음 단계에서 연결합니다.
       </p>
       <ul className="list-disc pl-5 text-zinc-600">
-        <li>노드 생성 시 자동 오픈 금지 → <b>Open</b> 클릭 시에만 표시</li>
+        <li>노드 생성 시 서버 저장(POST) → 즉시 재조회(GET)</li>
         <li>연결 규칙: pdb→visualizer/info, compound→admet</li>
       </ul>
     </div>
@@ -440,6 +553,12 @@ function PipelinePage() {
         <ModuleList modules={MODULES} onCreate={createNode} />
 
         <main className="relative">
+          {/* 로딩 오버레이 (노드 재동기화 중) */}
+          {loadingNodes && (
+            <div className="absolute inset-0 z-10 grid place-items-center bg-white/50 text-xs text-zinc-600">
+              Syncing nodes…
+            </div>
+          )}
           <div className="absolute inset-0">
             <ReactFlow
               nodes={nodes}
