@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import ReactFlow, {
   Background,
   Controls,
@@ -18,13 +18,16 @@ import ReactFlow, {
 } from "reactflow";
 import "reactflow/dist/style.css";
 
+import { useRouter, useSearchParams } from "next/navigation";
 import Header from "@/app/components/pipeline2/Header";
 import ModuleList, {
   type ModuleSpec as ListModuleSpec,
   type ModuleKey as ListModuleKey,
 } from "@/app/components/pipeline2/ModuleList";
 
-// ===== 모듈 사양 (리스트와 동일 구조 유지) =====
+/* =========================
+ * 모듈 사양
+ * =======================*/
 type ModuleKey = ListModuleKey;
 type ModuleSpec = ListModuleSpec;
 
@@ -40,22 +43,26 @@ const MODULES: ModuleSpec[] = [
 
 const VISUALIZER_KEYS: Readonly<ModuleKey[]> = ["visualizer", "distance-map"];
 
-// ===== 공용 모달 컴포넌트 =====
+/* =========================
+ * 공용 모달 (컴팩트)
+ * =======================*/
 function Modal({
   open,
   title,
   onClose,
   children,
+  maxWidth = "w-[min(420px,92vw)]",
 }: {
   open: boolean;
   title: string;
   onClose: () => void;
   children?: React.ReactNode;
+  maxWidth?: string;
 }) {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4">
-      <div className="w-[min(900px,95vw)] rounded-2xl bg-white shadow-2xl ring-1 ring-zinc-200">
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-3">
+      <div className={`${maxWidth} rounded-2xl bg-white shadow-2xl ring-1 ring-zinc-200`}>
         <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-2">
           <div className="text-sm font-semibold">{title}</div>
           <button
@@ -71,7 +78,9 @@ function Modal({
   );
 }
 
-// ===== 노드 데이터/카드 =====
+/* =========================
+ * 노드 카드
+ * =======================*/
 type NodeData = {
   key: ModuleKey;
   title: string;
@@ -149,7 +158,9 @@ function NodeCard({ data, selected }: NodeProps<NodeData>) {
 
 const nodeTypes: NodeTypes = { card: NodeCard };
 
-// ===== 연결 규칙 =====
+/* =========================
+ * 연결 규칙
+ * =======================*/
 function allowConnection(
   sourceNode?: Node<NodeData>,
   targetNode?: Node<NodeData>
@@ -168,9 +179,30 @@ function allowConnection(
   return false;
 }
 
-// ===== 페이지 =====
+/* =========================
+ * API
+ * =======================*/
+const API_BASE = "/api";
+
+type ProjectDTO = {
+  id: number;
+  name: string;
+  createdAt?: string | null;
+};
+
+/* =========================
+ * 페이지
+ * =======================*/
 export default function PipelinePage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const projectId = useMemo(() => {
+    const idParam = searchParams?.get("id");
+    return idParam ? Number(idParam) : undefined;
+  }, [searchParams]);
+
   const [workflowName, setWorkflowName] = useState<string>("Protein Workflow");
+  const [loadingName, setLoadingName] = useState<boolean>(false);
 
   // React Flow 상태
   const [nodes, setNodes, onNodesChange] = useNodesState<NodeData>([]);
@@ -180,25 +212,68 @@ export default function PipelinePage() {
   const [modalKey, setModalKey] = useState<ModuleKey | null>(null);
   const modalOpen = modalKey !== null;
 
-  // UI 토글 (Settings)
+  // UI 토글
   const [showMiniMap, setShowMiniMap] = useState<boolean>(true);
   const [showControls, setShowControls] = useState<boolean>(true);
 
   // Rename 모달
   const [renameOpen, setRenameOpen] = useState<boolean>(false);
   const [renameInput, setRenameInput] = useState<string>(workflowName);
+  const [renaming, setRenaming] = useState<boolean>(false);
+
+  // 이름 로드 (GET /projects/{id})
+  useEffect(() => {
+    const loadName = async () => {
+      if (!projectId) return;
+      try {
+        setLoadingName(true);
+        const res = await fetch(`${API_BASE}/projects/${projectId}`, { method: "GET" });
+        if (!res.ok) throw new Error(`GET /projects/${projectId} failed (${res.status})`);
+        const data: ProjectDTO = await res.json();
+        if (data?.name) {
+          setWorkflowName(data.name);     // Header에 바로 반영
+          setRenameInput(data.name);
+        }
+      } catch (err) {
+        console.error("[Load Project Name] error:", err);
+      } finally {
+        setLoadingName(false);
+      }
+    };
+    loadName();
+  }, [projectId]);
 
   const openRename = useCallback(() => {
     setRenameInput(workflowName);
     setRenameOpen(true);
   }, [workflowName]);
 
-  const submitRename = useCallback(() => {
+  // Rename 저장 (PUT /projects/{id})
+  const submitRename = useCallback(async () => {
     const name = renameInput.trim();
     if (name.length === 0) return;
-    setWorkflowName(name);
-    setRenameOpen(false);
-  }, [renameInput]);
+    if (!projectId) {
+      alert("Project ID가 없습니다. URL에 ?id=... 를 지정하세요.");
+      return;
+    }
+    try {
+      setRenaming(true);
+      const res = await fetch(`${API_BASE}/projects/${projectId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) throw new Error(`PUT /projects/${projectId} failed (${res.status})`);
+      const updated: ProjectDTO = await res.json().catch(() => ({ id: projectId, name } as ProjectDTO));
+      setWorkflowName(updated?.name ?? name); // Header 즉시 반영
+      setRenameOpen(false);
+    } catch (err) {
+      console.error("[Rename Project] error:", err);
+      alert("프로젝트 이름 변경에 실패했습니다.");
+    } finally {
+      setRenaming(false);
+    }
+  }, [renameInput, projectId]);
 
   // 노드 생성
   const createNode = useCallback(
@@ -241,48 +316,7 @@ export default function PipelinePage() {
     [nodes]
   );
 
-  // 복제/삭제/저장
-  const onDuplicate = useCallback(() => {
-    const idMap = new Map<string, string>();
-    const offset = 40;
-
-    const clonedNodes: Node<NodeData>[] = nodes.map((n) => {
-      const newId = `${n.id}-copy-${Math.round(Math.random() * 9999)}`;
-      idMap.set(n.id, newId);
-      return {
-        ...n,
-        id: newId,
-        position: { x: n.position.x + offset, y: n.position.y + offset },
-        data: { ...n.data },
-      };
-    });
-
-    const clonedEdges = edges
-      .map((e) => {
-        const ns = e.source ? idMap.get(e.source) : undefined;
-        const nt = e.target ? idMap.get(e.target) : undefined;
-        if (!ns || !nt) return null as unknown as Edge;
-        return {
-          ...e,
-          id: `${e.id}-copy-${Math.round(Math.random() * 9999)}`,
-          source: ns,
-          target: nt,
-        };
-      })
-      .filter(Boolean) as Edge[];
-
-    setNodes((prev) => [...prev, ...clonedNodes]);
-    setEdges((prev) => [...prev, ...clonedEdges]);
-  }, [nodes, edges, setNodes, setEdges]);
-
-  const onDelete = useCallback(() => {
-    const ok = confirm("Delete all nodes and edges in this workflow?");
-    if (ok) {
-      setNodes([]);
-      setEdges([]);
-    }
-  }, [setNodes, setEdges]);
-
+  // 저장(placeholder)
   const onSave = useCallback(() => {
     const payload = {
       name: workflowName,
@@ -305,9 +339,69 @@ export default function PipelinePage() {
       savedAt: new Date().toISOString(),
     };
     console.log("[Pipeline Save]", payload);
-    // TODO: POST /api/workflows
   }, [workflowName, nodes, edges]);
 
+  // Duplicate (확인 → GET → POST)
+  const [duplicating, setDuplicating] = useState<boolean>(false);
+  const onDuplicate = useCallback(async () => {
+    if (!projectId) {
+      alert("Project ID가 없습니다. URL에 ?id=... 를 지정하세요.");
+      return;
+    }
+    const ok = confirm(`이 워크플로우를 복제할까요?\n\n${workflowName}`);
+    if (!ok) return;
+
+    try {
+      setDuplicating(true);
+      const getRes = await fetch(`${API_BASE}/projects/${projectId}`, { method: "GET" });
+      if (!getRes.ok) throw new Error(`GET /projects/${projectId} failed (${getRes.status})`);
+      const original: ProjectDTO = await getRes.json();
+      const nameForCopy = (original?.name || workflowName) + " (Copy)";
+
+      const postRes = await fetch(`${API_BASE}/projects`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: nameForCopy }),
+      });
+      if (!postRes.ok) throw new Error(`POST /projects failed (${postRes.status})`);
+      const created: ProjectDTO = await postRes.json().catch(() => ({ id: -1, name: nameForCopy }));
+
+      alert(`프로젝트가 복제되었습니다.\n[${created.name}] (id: ${created.id ?? "?"})`);
+      // 원하면 created.id로 이동:
+      // if (created.id && created.id > 0) router.push(`/pipeline?page=...&id=${created.id}`);
+    } catch (err) {
+      console.error("[Duplicate Project] error:", err);
+      alert("프로젝트 복제에 실패했습니다.");
+    } finally {
+      setDuplicating(false);
+    }
+  }, [projectId, workflowName]);
+
+  // Delete (확인 → DELETE → /pipeline 리다이렉트)
+  const [deleting, setDeleting] = useState<boolean>(false);
+  const onDelete = useCallback(async () => {
+    if (!projectId) {
+      alert("Project ID가 없습니다. URL에 ?id=... 를 지정하세요.");
+      return;
+    }
+    const ok = confirm(`정말 삭제할까요?\n\n${workflowName}\n이 작업은 되돌릴 수 없습니다.`);
+    if (!ok) return;
+
+    try {
+      setDeleting(true);
+      const res = await fetch(`${API_BASE}/projects/${projectId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(`DELETE /projects/${projectId} failed (${res.status})`);
+      alert("프로젝트가 삭제되었습니다.");
+      router.push("/pipeline");
+    } catch (err) {
+      console.error("[Delete Project] error:", err);
+      alert("프로젝트 삭제에 실패했습니다.");
+    } finally {
+      setDeleting(false);
+    }
+  }, [projectId, workflowName, router]);
+
+  // 모듈 모달 내용
   const modalTitle = modalKey ? MODULES.find((m) => m.key === modalKey)?.title ?? "Module" : "";
   const modalBody = (
     <div className="space-y-3 text-sm text-zinc-700">
@@ -315,30 +409,26 @@ export default function PipelinePage() {
         <b>{modalTitle}</b> placeholder. 실제 UI/예제는 다음 단계에서 연결합니다.
       </p>
       <ul className="list-disc pl-5 text-zinc-600">
-        <li>
-          노드 생성 시 자동 오픈 금지 → <b>Open</b> 클릭 시에만 표시
-        </li>
+        <li>노드 생성 시 자동 오픈 금지 → <b>Open</b> 클릭 시에만 표시</li>
         <li>연결 규칙: pdb→visualizer/info, compound→admet</li>
       </ul>
     </div>
   );
 
-  const proOptions = { hideAttribution: true };
+  // Header에는 실제 워크플로우명 그대로 전달
+  const headerName = workflowName;
 
   return (
     <div className="min-h-screen w-full bg-white text-zinc-900 grid grid-rows-[56px_1fr]">
       {/* 헤더 */}
       <div className="relative z-[10000]">
         <Header
-          workflowName={workflowName}
+          workflowName={headerName}
           onOpenRename={openRename}
           onDuplicate={onDuplicate}
           onDelete={onDelete}
           onSave={onSave}
-          uiToggles={{
-            showMiniMap,
-            showControls,
-          }}
+          uiToggles={{ showMiniMap, showControls }}
           onToggleMiniMap={() => setShowMiniMap((v) => !v)}
           onToggleControls={() => setShowControls((v) => !v)}
         />
@@ -346,10 +436,8 @@ export default function PipelinePage() {
 
       {/* 본문 */}
       <div className="grid grid-cols-[300px_1fr]">
-        {/* 🔹 분리된 모듈 목록 */}
         <ModuleList modules={MODULES} onCreate={createNode} />
 
-        {/* 캔버스 */}
         <main className="relative">
           <div className="absolute inset-0">
             <ReactFlow
@@ -361,7 +449,7 @@ export default function PipelinePage() {
               isValidConnection={isValidConnection}
               nodeTypes={nodeTypes}
               fitView
-              proOptions={proOptions}
+              proOptions={{ hideAttribution: true }}
             >
               <Background />
               {showMiniMap && <MiniMap zoomable pannable />}
@@ -386,19 +474,22 @@ export default function PipelinePage() {
             onChange={(e) => setRenameInput(e.target.value)}
             placeholder="Enter a new name…"
             autoFocus
+            disabled={renaming}
           />
           <div className="flex items-center justify-end gap-2 pt-1">
             <button
               onClick={() => setRenameOpen(false)}
               className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-50"
+              disabled={renaming}
             >
               Cancel
             </button>
             <button
               onClick={submitRename}
-              className="rounded-lg bg-black px-3 py-1.5 text-sm text-white hover:bg-zinc-900"
+              className="rounded-lg bg-black px-3 py-1.5 text-sm text-white hover:bg-zinc-900 disabled:opacity-60"
+              disabled={renaming}
             >
-              Save
+              {renaming ? "Saving..." : "Save"}
             </button>
           </div>
         </div>

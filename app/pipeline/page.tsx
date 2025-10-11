@@ -148,7 +148,7 @@ export default function PipelineHomePage() {
     useEffect(() => {
         async function fetchProjects() {
             try {
-                const res = await fetch("http://34.61.162.19/api/projects");
+                const res = await fetch("/api/projects");
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const data = await res.json();
 
@@ -288,7 +288,7 @@ export default function PipelineHomePage() {
                                 onClick={async (e) => {
                                     e.preventDefault();
                                     try {
-                                        const res = await fetch("http://34.61.162.19/api/projects", {
+                                        const res = await fetch("/api/projects", {
                                             method: "POST",
                                             headers: { "Content-Type": "application/json" },
                                             body: JSON.stringify({ name: "My Workflow" }),
