@@ -198,6 +198,26 @@ function PipelinePage() {
   const [nodes, setNodes, onNodesChange] = useNodesState<NodeData>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge[]>([]);
 
+// 모든 노드의 현재 좌표를 서버에 저장 (fetch 전에 호출)
+const persistAllNodePositions = useCallback(async () => {
+  if (!projectId) return;
+  if (!nodes || nodes.length === 0) return;
+  try {
+    const tasks = nodes.map((n) => {
+      const x = Math.round(n.position.x);
+      const y = Math.round(n.position.y);
+      return fetch(`${API_BASE}/projects/${projectId}/nodes/${n.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ x, y }),
+      });
+    });
+    await Promise.allSettled(tasks);
+  } catch (e) {
+    console.error("[Persist Positions] error:", e);
+  }
+}, [projectId, nodes]);
+
   // 선택 상태
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
@@ -298,6 +318,8 @@ function PipelinePage() {
 
   // 노드 목록 새로고침
   const refreshNodes = useCallback(async () => {
+    // fetch 전에 현재 좌표 저장
+    await persistAllNodePositions();
     if (!projectId) return;
     try {
       setLoadingNodes(true);
@@ -802,6 +824,7 @@ function PipelinePage() {
             reloadingDetail={reloadingDetail}
             projectId={projectId ?? 0}
             onRequestRefreshNodes={async () => {
+              await persistAllNodePositions();
               await refreshNodes();
               await refreshLinks();
             }}

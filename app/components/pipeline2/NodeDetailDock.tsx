@@ -256,6 +256,19 @@ const [secLastSele, setSecLastSele] = useState<string | null>(null);
 
   useEffect(() => setLocalName(node?.name ?? ""), [node?.name]);
 
+
+// VISUALIZER/SECONDARY는 상세 패널이 열리면 자동으로 입력을 조회
+useEffect(() => {
+  if (!open) return;
+  if (!nodeId || !projectId) return;
+  if (!(isVisualizer || isSecondary)) return;
+  // 이미 성공 상태면 재요청 과도 방지: 필요 시 주석 처리
+  if (inputResult === "SUCCESS" && inputFiles && inputFiles.length > 0) return;
+  fetchInputs();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [open, nodeId, projectId, isVisualizer, isSecondary]);
+
+
   if (!open || !node) return null;
 
   const st = statusStyle(node.status);
