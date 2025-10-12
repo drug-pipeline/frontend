@@ -70,10 +70,7 @@ export default function DeepKinomePanel({
   }, [searchParams, taskIdProp]);
 
   // API base
-  const API_BASE = useMemo(() => {
-    const fromEnv = process.env.NEXT_PUBLIC_DK_API_BASE;
-    return basePath ?? (fromEnv && fromEnv.length > 0 ? fromEnv : "/api/dk");
-  }, [basePath]);
+  const API_BASE = "http://34.61.162.19/api/deepkinome"
 
   // fetch dashboard data
   useEffect(() => {
