@@ -1,4 +1,3 @@
-// app/pipeline/edit/page.tsx — real API wired (+ Visualizer & Secondary modal)
 "use client";
 
 import React, {
@@ -20,6 +19,8 @@ import ReactFlow, {
   Node,
   Position,
   OnSelectionChangeParams,
+  OnConnectStart,
+  OnConnectEnd,
 } from "reactflow";
 import "reactflow/dist/style.css";
 
@@ -29,13 +30,20 @@ import ModuleSidebar, {
   MODULES,
   ModuleSpec,
 } from "@/app/components/pipeline2/Modules";
-import { nodeTypes, type NodeData, type ModuleKey } from "@/app/components/pipeline2/NodeCard";
+import {
+  nodeTypes,
+  type NodeData,
+  type ModuleKey,
+} from "@/app/components/pipeline2/NodeCard";
 import NodeDetailDock, {
   type MinimalNodeDTO,
 } from "@/app/components/pipeline2/NodeDetailDock";
 import NglWebapp from "@/app/components/NglWebapp";
 import SecondaryStructurePanel from "@/app/components/SecondaryStructurePanel";
-import { ConnectionHintsProvider } from "@/app/components/pipeline2/ConnectionHintsContext";
+import {
+  ConnectionHintsProvider,
+  useConnectionHints,
+} from "@/app/components/pipeline2/ConnectionHintsContext";
 
 /* =========================
  * 서버 스펙 타입
@@ -92,8 +100,6 @@ type NodeLogsDTO = {
 /* =========================
  * 모듈 키 <-> 서버 타입 매핑
  * =======================*/
-
-
 const keyToType: Record<string, ServerNodeType> = {
   "pdb-input": "PDB",
   "compound-input": "COMPOUND",
@@ -175,7 +181,7 @@ function SimpleModal(props: {
 }
 
 /* =========================
- * 메인 페이지
+ * 메인 페이지 (컨텍스트 소비자)
  * =======================*/
 function PipelinePage() {
   const router = useRouter();
@@ -228,6 +234,7 @@ function PipelinePage() {
   const [viewerHighlightRep, setViewerHighlightRep] = useState<any>(null);
   const [viewerLastSele, setViewerLastSele] = useState<string | null>(null);
 
+  const { setHint: setHintCtx, beginDrag, endDrag, clearHint } = useConnectionHints();
   const viewerProp = useMemo(
     () => ({
       stage: viewerStage,
@@ -423,17 +430,26 @@ function PipelinePage() {
           const s = serverNodeMap[String(sourceId)];
           const t = serverNodeMap[String(targetId)];
           const isVisPair =
-            ((s?.type === "VISUALIZER" || s?.type === "SECONDARY") && t?.type === "PDB" && t?.status === "SUCCESS") ||
-            ((t?.type === "VISUALIZER" || t?.type === "SECONDARY") && s?.type === "PDB" && s?.status === "SUCCESS");
+            ((s?.type === "VISUALIZER" || s?.type === "SECONDARY") &&
+              t?.type === "PDB" &&
+              t?.status === "SUCCESS") ||
+            ((t?.type === "VISUALIZER" || t?.type === "SECONDARY") &&
+              s?.type === "PDB" &&
+              s?.status === "SUCCESS");
           if (isVisPair && projectId) {
-            const targetVisId = (s?.type === "VISUALIZER" || s?.type === "SECONDARY") ? s.id : t?.id;
+            const targetVisId =
+              s?.type === "VISUALIZER" || s?.type === "SECONDARY" ? s.id : t?.id;
             if (targetVisId) {
-              const res2 = await fetch(`${API_BASE}/projects/${projectId}/nodes/${targetVisId}`, {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ status: "SUCCESS" }),
-              });
-              if (!res2.ok) console.error("[Vis/Secondary->SUCCESS] PUT failed:", res2.status);
+              const res2 = await fetch(
+                `${API_BASE}/projects/${projectId}/nodes/${targetVisId}`,
+                {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ status: "SUCCESS" }),
+                }
+              );
+              if (!res2.ok)
+                console.error("[Vis/Secondary->SUCCESS] PUT failed:", res2.status);
               await refreshNodes();
               await refreshLinks();
             }
@@ -443,7 +459,10 @@ function PipelinePage() {
         }
 
         setEdges((eds) =>
-          addEdge({ ...conn, id: String(created.id), animated: true, style: { strokeWidth: 2 } } as any, eds)
+          addEdge(
+            { ...conn, id: String(created.id), animated: true, style: { strokeWidth: 2 } } as any,
+            eds
+          )
         );
       } catch (err) {
         console.error("[Create Link] error:", err);
@@ -453,9 +472,12 @@ function PipelinePage() {
     [projectId, nodes, setEdges, serverNodeMap, refreshNodes, refreshLinks]
   );
 
-  const onConnect = useCallback(async (params: Connection | Edge) => {
-    await postLinkAndAddEdge(params);
-  }, [postLinkAndAddEdge]);
+  const onConnect = useCallback(
+    async (params: Connection | Edge) => {
+      await postLinkAndAddEdge(params);
+    },
+    [postLinkAndAddEdge]
+  );
 
   const isValidConnection = useCallback(
     (conn: Connection): boolean => {
@@ -569,7 +591,9 @@ function PipelinePage() {
       if (!projectId || !nodeId) return;
       setRefreshingLogs(true);
       try {
-        const res = await fetch(`${API_BASE}/projects/${projectId}/nodes/${nodeId}/logs`, { method: "GET" });
+        const res = await fetch(`${API_BASE}/projects/${projectId}/nodes/${nodeId}/logs`, {
+          method: "GET",
+        });
         if (res.status === 404) {
           setLogs([]);
           return;
@@ -669,6 +693,29 @@ function PipelinePage() {
 
   const defaultViewport = { x: 0, y: 0, zoom: 1 };
 
+  const onConnectStart: OnConnectStart = (_e, params) => {
+    const originId = params.nodeId ?? null;
+    const handleType = params.handleType; // 'source' | 'target'
+    if (!originId || !handleType) return;
+
+    // 현재 nodes에서 origin 모듈키 찾아서 컨텍스트에 주입
+    const origin = nodes.find((n) => n.id === originId);
+    const originKey = origin?.data?.key as ModuleKey | undefined;
+    if (!originKey) return;
+
+    const mode = handleType === "source" ? "to" : "from";
+    setHintCtx(mode, originId, originKey);
+    beginDrag();
+  };
+
+  const endAllDrag = () => {
+    endDrag();
+    clearHint();
+  };
+
+  const onConnectEnd: OnConnectEnd = () => endAllDrag(); // 드롭 완료 시
+  const onConnectStop = () => endAllDrag(); // 드롭 취소/실패 시
+
   return (
     <div
       className={[
@@ -691,7 +738,6 @@ function PipelinePage() {
       </div>
 
       {/* 본문 */}
-      <ConnectionHintsProvider>
       <div className="grid grid-cols-[300px_1fr]">
         <ModuleSidebar modules={MODULES} onCreate={createNode} />
 
@@ -709,16 +755,16 @@ function PipelinePage() {
               nodes={
                 selectedNodeId
                   ? nodes.map((n) =>
-                    n.id === selectedNodeId
-                      ? n
-                      : {
-                        ...n,
-                        style: {
-                          opacity: 0.9,
-                          filter: "grayscale(0.12) brightness(0.98)",
-                        },
-                      }
-                  )
+                      n.id === selectedNodeId
+                        ? n
+                        : {
+                            ...n,
+                            style: {
+                              opacity: 0.9,
+                              filter: "grayscale(0.12) brightness(0.98)",
+                            },
+                          }
+                    )
                   : nodes
               }
               edges={edges}
@@ -730,6 +776,8 @@ function PipelinePage() {
               nodeTypes={nodeTypes}
               defaultViewport={defaultViewport}
               proOptions={{ hideAttribution: true }}
+              onConnectStart={onConnectStart}
+              onConnectEnd={onConnectEnd}
             >
               <Background />
               {showMiniMap && <MiniMap zoomable pannable />}
@@ -757,8 +805,12 @@ function PipelinePage() {
               await refreshNodes();
               await refreshLinks();
             }}
-            onOpenVisualizer={() => { setVizOpen(true); }}
-            onOpenSecondary={() => { setSecondaryOpen(true); }}
+            onOpenVisualizer={() => {
+              setVizOpen(true);
+            }}
+            onOpenSecondary={() => {
+              setSecondaryOpen(true);
+            }}
           />
 
           {/* Visualizer 모달 (NGL) */}
@@ -821,7 +873,7 @@ function PipelinePage() {
           </SimpleModal>
         </main>
       </div>
-</ConnectionHintsProvider>
+
       {/* 하이라이트 시 디밍 효과 */}
       <style>{`
         .selection-has-node .react-flow__node { transition: filter 120ms ease, opacity 120ms ease; }
@@ -841,10 +893,13 @@ function PageFallback() {
   );
 }
 
+/** 여기서 Provider가 PipelinePage “바깥”에서 감쌉니다. */
 export default function Page() {
   return (
     <Suspense fallback={<PageFallback />}>
-      <PipelinePage />
+      <ConnectionHintsProvider>
+        <PipelinePage />
+      </ConnectionHintsProvider>
     </Suspense>
   );
 }

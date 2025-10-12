@@ -192,7 +192,8 @@ export function NodeCard(props: NodeProps<NodeData>) {
   const base = "group relative rounded-2xl bg-white/90 backdrop-blur shadow-sm ring-1 ring-zinc-200 transition-all";
 
   // connection hint context
-  const { hint, setHint, clearHint, shouldHighlightKey, shouldDimKey } = useConnectionHints();
+  const { hint, setHint, clearHint, beginDrag, endDrag, shouldHighlightKey, shouldDimKey } = useConnectionHints();
+
 
   // what to show in tooltip for *this* node (only when this node is the origin under hover)
   const isOrigin = hint.originNodeId === id && !!hint.mode;
@@ -253,7 +254,9 @@ export function NodeCard(props: NodeProps<NodeData>) {
           id="in"
           className={`!w-3 !h-3 !bg-zinc-600 border-2 border-white ${selected ? "shadow-[0_0_0_2px_rgba(99,102,241,0.5)]" : ""}`}
           onMouseEnter={onEnterTarget}
-          onMouseLeave={onLeaveTarget}
+          onMouseLeave={() => { if (!hint.isDragging) clearHint(); }}
+          onPointerDown={() => { setHint("from", id, moduleKey); beginDrag(); }}
+          onPointerUp={() => { endDrag(); clearHint(); }}
         />
       )}
       {hasSourceHandle && (
@@ -263,7 +266,9 @@ export function NodeCard(props: NodeProps<NodeData>) {
           id="out"
           className={`!w-3 !h-3 !bg-zinc-600 border-2 border-white ${selected ? "shadow-[0_0_0_2px_rgba(99,102,241,0.5)]" : ""}`}
           onMouseEnter={onEnterSource}
-          onMouseLeave={onLeaveSource}
+          onMouseLeave={() => { if (!hint.isDragging) clearHint(); }}
+          onPointerDown={() => { setHint("to", id, moduleKey); beginDrag(); }}
+          onPointerUp={() => { endDrag(); clearHint(); }}
         />
       )}
 

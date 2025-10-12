@@ -20,13 +20,15 @@ type HintState = {
   mode: HintMode;
   originNodeId: string | null;
   originKey: ModuleKey | null;
+  isDragging: boolean;            // ← 추가
 };
 
 type Ctx = {
   hint: HintState;
   setHint: (mode: HintMode, originNodeId: string | null, originKey: ModuleKey | null) => void;
   clearHint: () => void;
-  // helper: should a given module key be highlighted under current hint?
+  beginDrag: () => void;          // ← 추가
+  endDrag: () => void;            // ← 추가
   shouldHighlightKey: (moduleKey: ModuleKey, nodeId: string) => boolean;
   shouldDimKey: (moduleKey: ModuleKey, nodeId: string) => boolean;
 };
@@ -38,13 +40,23 @@ export function ConnectionHintsProvider({ children }: { children: React.ReactNod
     mode: null,
     originNodeId: null,
     originKey: null,
+    isDragging: false,            // ← 기본값
   });
 
   const setHint = React.useCallback((mode: HintMode, originNodeId: string | null, originKey: ModuleKey | null) => {
-    setHintState({ mode, originNodeId, originKey });
+    setHintState((prev) => ({ ...prev, mode, originNodeId, originKey }));
   }, []);
 
-  const clearHint = React.useCallback(() => setHintState({ mode: null, originNodeId: null, originKey: null }), []);
+  const clearHint = React.useCallback(() => {
+    setHintState({ mode: null, originNodeId: null, originKey: null, isDragging: false });
+  }, []);
+
+  const beginDrag = React.useCallback(() => {
+    setHintState((prev) => ({ ...prev, isDragging: true }));
+  }, []);
+  const endDrag = React.useCallback(() => {
+    setHintState((prev) => ({ ...prev, isDragging: false }));
+  }, []);
 
   const shouldHighlightKey = React.useCallback(
     (moduleKey: ModuleKey, nodeId: string) => {
@@ -69,13 +81,11 @@ export function ConnectionHintsProvider({ children }: { children: React.ReactNod
     [hint]
   );
 
-  const value = React.useMemo<Ctx>(() => ({ hint, setHint, clearHint, shouldHighlightKey, shouldDimKey }), [
-    hint,
-    setHint,
-    clearHint,
-    shouldHighlightKey,
-    shouldDimKey,
-  ]);
+  const value = React.useMemo<Ctx>(() => ({
+    hint, setHint, clearHint, beginDrag, endDrag,
+    shouldHighlightKey, shouldDimKey
+  }), [hint, setHint, clearHint, beginDrag, endDrag, shouldHighlightKey, shouldDimKey]);
+
 
   return <ConnectionHintsContext.Provider value={value}>{children}</ConnectionHintsContext.Provider>;
 }
