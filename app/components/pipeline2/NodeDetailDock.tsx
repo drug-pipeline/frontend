@@ -418,11 +418,6 @@ const [secLastSele, setSecLastSele] = useState<string | null>(null);
                 ))}
               </ul>
             )}
-
-            <p className="mt-3 text-[10px] leading-relaxed text-zinc-500">
-              입력 파일 중 첫 번째 파일을 NGL에 로드합니다. 스트리밍 엔드포인트:
-              <code> /api/nodes/{"{fileId}"}/content</code>
-            </p>
           </div>
         )}
 

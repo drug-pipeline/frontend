@@ -6,7 +6,7 @@ export async function GET(
   ctx: { params: Promise<{ pdb: string }> }
 ) {
   try {
-    const backend = process.env.NEXT_PUBLIC_BACKEND_URL;
+    const backend = "http://34.61.162.19/api/py";
     if (!backend) {
       return NextResponse.json({ error: "NEXT_PUBLIC_BACKEND_URL is not set" }, { status: 500 });
     }
