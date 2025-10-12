@@ -81,19 +81,19 @@ export default function DeepKinomePanel({
       setError(null);
       try {
         const [pRes, dRes, aRes, sRes, mRes] = await Promise.all([
-          fetch(`${API_BASE}/prediction?taskId=${encodeURIComponent(taskId)}`, {
+          fetch(`${API_BASE}/predictions/${encodeURIComponent(taskId)}`, {
             cache: "no-store",
           }),
-          fetch(`${API_BASE}/docking?taskId=${encodeURIComponent(taskId)}`, {
+          fetch(`${API_BASE}/docking/${encodeURIComponent(taskId)}`, {
             cache: "no-store",
           }),
-          fetch(`${API_BASE}/admet?taskId=${encodeURIComponent(taskId)}`, {
+          fetch(`${API_BASE}/admet/${encodeURIComponent(taskId)}`, {
             cache: "no-store",
           }),
-          fetch(`${API_BASE}/smiles?taskId=${encodeURIComponent(taskId)}`, {
+          fetch(`${API_BASE}/smiles/${encodeURIComponent(taskId)}`, {
             cache: "no-store",
           }),
-          fetch(`${API_BASE}/matching?taskId=${encodeURIComponent(taskId)}`, {
+          fetch(`${API_BASE}/matching/${encodeURIComponent(taskId)}`, {
             cache: "no-store",
           }),
         ]);
