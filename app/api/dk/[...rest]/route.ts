@@ -1,30 +1,36 @@
-// /app/api/dk/[...rest]/route.ts
 import { NextResponse } from "next/server";
 
-const UPSTREAM_BASE = "https://str.kribb.re.kr/deepkinome";
+export const dynamic = "force-dynamic"; // 캐시 방지
+export const runtime = "nodejs";
 
-export async function GET(
-  req: Request,
-  { params }: { params: Promise<{ rest: string[] }> } // ✅ Promise로 수정
-) {
-  const { rest } = await params;                      // ✅ await 추가
-  const path = rest.join("/");
-  const url = `${UPSTREAM_BASE}/${path}`;
+type Ctx = { params: { parts: string[] } };
 
-  // 쿼리스트링 유지
-  const u = new URL(req.url);
-  const upstreamUrl = `${url}${u.search || ""}`;
+const UPSTREAM = process.env.DK_UPSTREAM_BASE
+  ?? "https://str.kribb.re.kr/deepkinome/api";
 
-  const res = await fetch(upstreamUrl, {
+function join(a: string, b: string) {
+  return `${a.replace(/\/+$/, "")}/${b.replace(/^\/+/, "")}`;
+}
+
+export async function GET(req: Request, { params }: Ctx) {
+  const url = new URL(req.url);
+  const path = params.parts.join("/"); // e.g. "prediction"
+  const upstreamUrl = new URL(join(UPSTREAM, path));
+
+  // 쿼리 그대로 전달
+  upstreamUrl.search = url.search;
+
+  const res = await fetch(upstreamUrl.toString(), {
     method: "GET",
+    // 필요한 경우 헤더 전달
+    headers: { accept: "application/json" },
     cache: "no-store",
   });
 
-  const body = await res.arrayBuffer();
-  return new NextResponse(body, {
+  return new NextResponse(res.body, {
     status: res.status,
     headers: {
-      "content-type": res.headers.get("content-type") ?? "application/octet-stream",
+      "content-type": res.headers.get("content-type") ?? "application/json",
     },
   });
 }

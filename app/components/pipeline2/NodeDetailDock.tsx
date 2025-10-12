@@ -3,9 +3,8 @@
 
 /**
  * Changes
- * - Note section moved above Logs
- * - All placeholders/labels in English
- * - loadNote(): no throwing on non-OK; soft-fail with console.warn
+ * - Add DeepKinome example launcher
+ * - Props: onOpenDeepKinome?
  */
 
 import dynamic from "next/dynamic";
@@ -28,6 +27,7 @@ import {
   FiFileText,
   FiPlus,
   FiX,
+  FiPlay,
 } from "react-icons/fi";
 
 export type NodeStatus = "PENDING" | "RUNNING" | "SUCCESS" | "FAILED";
@@ -39,7 +39,8 @@ export type ServerNodeType =
   | "DISTANCE_MAP"
   | "ADMET"
   | "UNIPROT_INFO"
-  | "PDB_INFO";
+  | "PDB_INFO"
+  | "DEEPKINOME"; // <<< added
 
 export type MinimalNodeDTO = {
   id: number;
@@ -69,6 +70,7 @@ type Props = {
 
   onOpenVisualizer?: () => void;
   onOpenSecondary?: () => void;
+  onOpenDeepKinome?: () => void; // <<< added
 };
 
 type NodeFileDTO = {
@@ -131,6 +133,9 @@ export default function NodeDetailDock({
   reloadingDetail,
   projectId,
   onRequestRefreshNodes,
+  onOpenVisualizer,
+  onOpenSecondary,
+  onOpenDeepKinome, // <<< added
 }: Props) {
   const [editMode, setEditMode] = useState(false);
   const [localName, setLocalName] = useState(node?.name ?? "");
@@ -145,11 +150,11 @@ export default function NodeDetailDock({
   const [inputFiles, setInputFiles] = useState<NodeFileDTO[] | null>(null);
   const [inputResult, setInputResult] = useState<NodeStatus | null>(null);
 
-  // Modals
+  // Modals (local)
   const [showVisualizer, setShowVisualizer] = useState(false);
   const [showSecondary, setShowSecondary] = useState(false);
 
-  // Note (minimal)
+  // Note
   const nodeId = node?.id;
   const [note, setNote] = useState<string>("");
   const [noteOpen, setNoteOpen] = useState(false);
@@ -159,6 +164,7 @@ export default function NodeDetailDock({
 
   const isVisualizer = node?.type === "VISUALIZER";
   const isSecondary = node?.type === "SECONDARY";
+  const isDeepKinome = node?.type === "DEEPKINOME"; // <<< added
 
   const loadFiles = useCallback(async () => {
     if (!nodeId) return;
@@ -267,7 +273,7 @@ export default function NodeDetailDock({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, nodeId, projectId, isVisualizer, isSecondary]);
 
-  // ---- NOTE: load (soft-fail, no throw) ----
+  // NOTE load/save (unchanged)
   const loadNote = useCallback(async () => {
     if (!open || !nodeId || !projectId) return;
     setNoteLoading(true);
@@ -277,7 +283,7 @@ export default function NodeDetailDock({
         console.warn(`[loadNote] GET node detail failed: ${res.status}`);
         setNote("");
         setNoteOpen(false);
-        return; // do NOT throw
+        return;
       }
       const detail: NodeDetailDTO = await res.json();
       const existing =
@@ -299,7 +305,6 @@ export default function NodeDetailDock({
     loadNote();
   }, [loadNote]);
 
-  // ---- NOTE: save ----
   const saveNote = useCallback(async () => {
     if (!nodeId || !projectId) return;
     setNoteSaving(true);
@@ -390,7 +395,29 @@ export default function NodeDetailDock({
       </div>
 
       <div className="space-y-3 p-3">
-        {/* Visualizer / Secondary */}
+        {/* DeepKinome example launcher */}
+        {isDeepKinome && (
+          <div className="rounded-lg border border-zinc-200 p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <div className="inline-flex items-center gap-1 text-xs font-semibold text-zinc-800">
+                DeepKinome
+              </div>
+              <button
+                onClick={() => onOpenDeepKinome && onOpenDeepKinome()}
+                className="inline-flex items-center gap-1 rounded-md bg-black px-2 py-1 text-[11px] font-medium text-white hover:bg-zinc-800"
+                title="Open DeepKinome (example)"
+              >
+                <FiPlay />
+                Open example
+              </button>
+            </div>
+            <div className="text-[11px] text-zinc-500">
+              Opens the DeepKinomePanel with task <code>example</code>.
+            </div>
+          </div>
+        )}
+
+        {/* Visualizer / Secondary (existing) */}
         {(isVisualizer || isSecondary) && (
           <div className="rounded-lg border border-zinc-200 p-3">
             <div className="mb-2 flex items-center justify-between">
@@ -471,8 +498,8 @@ export default function NodeDetailDock({
           </div>
         )}
 
-        {/* Files (non-visualizer) */}
-        {!isVisualizer && !isSecondary && (
+        {/* Files (non-visualizer / non-secondary / non-deepkinome) */}
+        {!isVisualizer && !isSecondary && !isDeepKinome && (
           <div className="rounded-lg border border-zinc-200 p-3">
             <div className="mb-2 flex items-center justify-between">
               <div className="inline-flex items-center gap-1 text-xs font-semibold text-zinc-800">
@@ -526,7 +553,7 @@ export default function NodeDetailDock({
           </div>
         )}
 
-        {/* ===== NOTE (now right above Logs) ===== */}
+        {/* NOTE + Logs (기존 그대로) */}
         <div>
           {!noteOpen ? (
             <button
@@ -585,7 +612,6 @@ export default function NodeDetailDock({
           )}
         </div>
 
-        {/* Logs */}
         <div className="flex items-center justify-between">
           <div className="text-xs font-semibold text-zinc-800">Activity Logs</div>
           <button
@@ -608,7 +634,7 @@ export default function NodeDetailDock({
         </div>
       </div>
 
-      {/* Modals */}
+      {/* Existing modals kept (Visualizer/Secondary) */}
       {showVisualizer && firstFile && (
         <Modal onClose={() => setShowVisualizer(false)}>
           <div className="w-[980px] h-[640px] bg-neutral-900 rounded-2xl p-3">
@@ -634,7 +660,7 @@ export default function NodeDetailDock({
               </div>
               <div className="bg-white rounded-xl ring-1 ring-zinc-200 overflow-auto p-3">
                 <SecondaryStructurePanel
-                  viewer={{ /* viewer wiring unchanged for brevity */ } as any}
+                  viewer={{ } as any}
                 />
               </div>
             </div>

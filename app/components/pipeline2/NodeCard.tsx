@@ -30,7 +30,9 @@ export type ModuleKey =
   | "distance-map"
   | "admet"
   | "uniprot-info"
-  | "pdb-info";
+  | "pdb-info"
+  | "deep-kinome"; // ★ 추가
+
 
 export type NodeData = {
   key: ModuleKey;
@@ -70,7 +72,9 @@ const KeyIcon: Record<ModuleKey, React.ComponentType<any>> = {
   admet: FiPackage,
   "uniprot-info": FiInfo,
   "pdb-info": FiInfo,
+  "deep-kinome": FiActivity, // ★ 추가
 };
+
 
 /* ===== Small pill ===== */
 function Pill({ children }: { children: React.ReactNode }) {
@@ -91,6 +95,7 @@ const KEY_LABEL: Record<ModuleKey, string> = {
   admet: "ADMET",
   "uniprot-info": "UniProt Info",
   "pdb-info": "PDB Info",
+  "deep-kinome": "DeepKinome", // ★ 추가
 };
 
 /* ===== Lightweight tooltip ===== */
@@ -186,7 +191,7 @@ export function NodeCard(props: NodeProps<NodeData>) {
   const isAdmet = moduleKey === "admet";
 
   const hasTargetHandle =
-    isVisualizer || isAdmet || moduleKey === "uniprot-info" || moduleKey === "pdb-info";
+    isVisualizer || isAdmet || moduleKey === "uniprot-info" || moduleKey === "pdb-info" || moduleKey === "deep-kinome";
   const hasSourceHandle = moduleKey === "pdb-input" || moduleKey === "compound-input";
 
   const base = "group relative rounded-2xl bg-white/90 backdrop-blur shadow-sm ring-1 ring-zinc-200 transition-all";
@@ -208,7 +213,9 @@ export function NodeCard(props: NodeProps<NodeData>) {
     admet: [],
     "uniprot-info": [],
     "pdb-info": [],
+    "deep-kinome": [], // ★ 추가
   };
+
   const FROM_BY_KEY: Record<ModuleKey, ModuleKey[]> = {
     "pdb-input": [],
     "compound-input": [],
@@ -218,7 +225,9 @@ export function NodeCard(props: NodeProps<NodeData>) {
     admet: ["compound-input"],
     "uniprot-info": ["pdb-input"],
     "pdb-info": ["pdb-input"],
+    "deep-kinome": ["pdb-input"], // ★ 추가
   };
+
 
   const toList = TO_BY_KEY[moduleKey] ?? [];
   const fromList = FROM_BY_KEY[moduleKey] ?? [];

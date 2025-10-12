@@ -27,7 +27,7 @@ export type ModuleKey =
   | "pqrsa"
   | "stap"
   | "admet"
-  | "deepkinome"
+  | "deep-kinome"
   | "ppi"
   | "natural"
   | "ai-protein-design"
@@ -58,7 +58,7 @@ export const MODULES: ModuleSpec[] = [
   { key: "pqrsa", title: "PQRSA", category: "Simulation", Icon: FiCpu },
   { key: "stap", title: "STAP", category: "Simulation", Icon: FiCpu },
   { key: "admet", title: "ADMET", category: "Analysis", Icon: FiActivity },
-  { key: "deepkinome", title: "DeepKinome", category: "Analysis", Icon: FiActivity },
+  { key: "deep-kinome", title: "DeepKinome", category: "Analysis", Icon: FiActivity },
   { key: "ppi", title: "PPI", category: "Analysis", Icon: FiActivity },
   { key: "natural", title: "Natural Product", category: "Analysis", Icon: FiActivity },
   { key: "ai-protein-design", title: "AI Protein Design", category: "Analysis", Icon: FiActivity },

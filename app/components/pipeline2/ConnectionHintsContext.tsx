@@ -12,6 +12,7 @@ export const ALLOWED: Record<ModuleKey, { to?: ModuleKey[]; from?: ModuleKey[] }
   admet: { from: ["compound-input"] },
   "uniprot-info": { from: ["pdb-input"] },
   "pdb-info": { from: ["pdb-input"] },
+  "deep-kinome": { from: ["pdb-input"] },
 };
 
 type HintMode = null | "to" | "from";

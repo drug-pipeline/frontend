@@ -40,6 +40,7 @@ import NodeDetailDock, {
 } from "@/app/components/pipeline2/NodeDetailDock";
 import NglWebapp from "@/app/components/NglWebapp";
 import SecondaryStructurePanel from "@/app/components/SecondaryStructurePanel";
+import DeepKinomePanel from "@/app/components/DeepKinomePanel"; // ★ 추가
 import {
   ConnectionHintsProvider,
   useConnectionHints,
@@ -58,12 +59,15 @@ type ServerNodeType =
   | "DISTANCE_MAP"
   | "ADMET"
   | "UNIPROT_INFO"
-  | "PDB_INFO";
+  | "PDB_INFO"
+  | "DEEPKINOME"; // ★ 추가
+
+// NOTE: 여기서는 기존 타입만 유지(DeepKinome는 런타임 캐스팅으로 처리)
 
 type ServerNodeDTO = {
   id: number;
   projectId: number;
-  type: ServerNodeType;
+  type: ServerNodeType | string; // ← 서버에서 "DEEPKINOME"이 와도 수용
   name: string;
   status: NodeStatus;
   x: number;
@@ -109,9 +113,10 @@ const keyToType: Record<string, ServerNodeType> = {
   admet: "ADMET",
   "uniprot-info": "UNIPROT_INFO",
   "pdb-info": "PDB_INFO",
+  "deep-kinome": "DEEPKINOME", // ★ 추가
 };
 
-const typeToKey: Record<ServerNodeType, ModuleKey> = {
+const typeToKey: Record<ServerNodeType, string> = {
   PDB: "pdb-input",
   COMPOUND: "compound-input",
   VISUALIZER: "visualizer",
@@ -120,11 +125,14 @@ const typeToKey: Record<ServerNodeType, ModuleKey> = {
   ADMET: "admet",
   UNIPROT_INFO: "uniprot-info",
   PDB_INFO: "pdb-info",
+  DEEPKINOME: "deep-kinome", // ★ 추가
 };
+
 
 /* =========================
  * 연결 규칙
  * =======================*/
+// 기존 allowConnection 바로 아래에 DeepKinome 규칙 추가
 function allowConnection(
   sourceNode?: Node<NodeData>,
   targetNode?: Node<NodeData>
@@ -132,6 +140,9 @@ function allowConnection(
   const sKey = sourceNode?.data?.key as ModuleKey | undefined;
   const tKey = targetNode?.data?.key as ModuleKey | undefined;
   if (!sKey || !tKey) return false;
+
+  // ✅ DeepKinome 규칙 추가: PDB → DeepKinome 허용
+  if (sKey === "pdb-input" && tKey === "deep-kinome") return true;
 
   if (
     sKey === "pdb-input" &&
@@ -146,6 +157,7 @@ function allowConnection(
   if (sKey === "compound-input" && tKey === "admet") return true;
   return false;
 }
+
 
 /* =========================
  * API BASE
@@ -198,25 +210,25 @@ function PipelinePage() {
   const [nodes, setNodes, onNodesChange] = useNodesState<NodeData>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge[]>([]);
 
-// 모든 노드의 현재 좌표를 서버에 저장 (fetch 전에 호출)
-const persistAllNodePositions = useCallback(async () => {
-  if (!projectId) return;
-  if (!nodes || nodes.length === 0) return;
-  try {
-    const tasks = nodes.map((n) => {
-      const x = Math.round(n.position.x);
-      const y = Math.round(n.position.y);
-      return fetch(`${API_BASE}/projects/${projectId}/nodes/${n.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ x, y }),
+  // 모든 노드의 현재 좌표를 서버에 저장 (fetch 전에 호출)
+  const persistAllNodePositions = useCallback(async () => {
+    if (!projectId) return;
+    if (!nodes || nodes.length === 0) return;
+    try {
+      const tasks = nodes.map((n) => {
+        const x = Math.round(n.position.x);
+        const y = Math.round(n.position.y);
+        return fetch(`${API_BASE}/projects/${projectId}/nodes/${n.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ x, y }),
+        });
       });
-    });
-    await Promise.allSettled(tasks);
-  } catch (e) {
-    console.error("[Persist Positions] error:", e);
-  }
-}, [projectId, nodes]);
+      await Promise.allSettled(tasks);
+    } catch (e) {
+      console.error("[Persist Positions] error:", e);
+    }
+  }, [projectId, nodes]);
 
   // 선택 상태
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -246,6 +258,10 @@ const persistAllNodePositions = useCallback(async () => {
   // === Visualizer/Secondary 모달 ===
   const [vizOpen, setVizOpen] = useState<boolean>(false);
   const [secondaryOpen, setSecondaryOpen] = useState<boolean>(false);
+
+  // === DeepKinome 모달(예제) ===
+  const [dkOpen, setDkOpen] = useState<boolean>(false);
+  const [dkTaskId, setDkTaskId] = useState<string>("example");
 
   // NGL viewer state (타입 충돌 방지를 위해 any)
   const [viewerStage, setViewerStage] = useState<any>(null);
@@ -292,7 +308,8 @@ const persistAllNodePositions = useCallback(async () => {
 
   // DTO -> Flow Node
   const dtoToFlowNode = useCallback((dto: ServerNodeDTO): Node<NodeData> => {
-    const key = typeToKey[dto.type as keyof typeof typeToKey] ?? "pdb-input";
+    const t = String(dto.type) as ServerNodeType;
+    const key = (typeToKey as any)[t] ?? "pdb-input";
     const safeStatus: NodeStatus =
       dto.status === "PENDING" ||
       dto.status === "RUNNING" ||
@@ -834,6 +851,10 @@ const persistAllNodePositions = useCallback(async () => {
             onOpenSecondary={() => {
               setSecondaryOpen(true);
             }}
+            onOpenDeepKinome={() => {
+              setDkTaskId("example");
+              setDkOpen(true);
+            }}
           />
 
           {/* Visualizer 모달 (NGL) */}
@@ -860,6 +881,21 @@ const persistAllNodePositions = useCallback(async () => {
                 <div className="relative h-full w-full rounded-xl ring-1 ring-zinc-200 overflow-auto p-3">
                   <SecondaryStructurePanel viewer={viewerProp as any} />
                 </div>
+              </div>
+            </div>
+          </SimpleModal>
+
+          {/* DeepKinome 모달 (example task) */}
+          <SimpleModal
+            open={dkOpen}
+            title="DeepKinome"
+            onClose={() => setDkOpen(false)}
+            wide
+          >
+            <div className="h-[calc(100%-1.5rem)]">
+              <div className="relative h-full w-full overflow-hidden rounded-xl">
+                {/* taskId를 'example'로 고정 */}
+                <DeepKinomePanel taskId={dkTaskId} />
               </div>
             </div>
           </SimpleModal>
