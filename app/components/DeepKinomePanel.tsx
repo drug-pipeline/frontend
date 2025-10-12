@@ -84,19 +84,19 @@ export default function DeepKinomePanel({
       setError(null);
       try {
         const [pRes, dRes, aRes, sRes, mRes] = await Promise.all([
-          fetch(`${API_BASE}/api/predictions/${encodeURIComponent(taskId)}`, {
+          fetch(`${API_BASE}/prediction?taskId=${encodeURIComponent(taskId)}`, {
             cache: "no-store",
           }),
-          fetch(`${API_BASE}/api/docking/${encodeURIComponent(taskId)}`, {
+          fetch(`${API_BASE}/docking?taskId=${encodeURIComponent(taskId)}`, {
             cache: "no-store",
           }),
-          fetch(`${API_BASE}/api/admet/${encodeURIComponent(taskId)}`, {
+          fetch(`${API_BASE}/admet?taskId=${encodeURIComponent(taskId)}`, {
             cache: "no-store",
           }),
-          fetch(`${API_BASE}/api/smiles/${encodeURIComponent(taskId)}`, {
+          fetch(`${API_BASE}/smiles?taskId=${encodeURIComponent(taskId)}`, {
             cache: "no-store",
           }),
-          fetch(`${API_BASE}/api/matching/${encodeURIComponent(taskId)}`, {
+          fetch(`${API_BASE}/matching?taskId=${encodeURIComponent(taskId)}`, {
             cache: "no-store",
           }),
         ]);
@@ -170,8 +170,8 @@ export default function DeepKinomePanel({
     const matched =
       Array.isArray(PdbData) && normUni
         ? PdbData.find(
-            (e) => (e.uniprot ?? "").trim().toUpperCase() === normUni
-          )
+          (e) => (e.uniprot ?? "").trim().toUpperCase() === normUni
+        )
         : undefined;
 
     if (!matched) {
@@ -191,21 +191,19 @@ export default function DeepKinomePanel({
         <div className="inline-flex rounded-xl border border-neutral-200 p-1 shadow-sm">
           <button
             onClick={() => setActive("selectivity")}
-            className={`rounded-lg px-3 py-1.5 text-xs transition ${
-              active === "selectivity"
+            className={`rounded-lg px-3 py-1.5 text-xs transition ${active === "selectivity"
                 ? "bg-black text-white shadow"
                 : "text-gray-700 hover:bg-neutral-100"
-            }`}
+              }`}
           >
             Selectivity
           </button>
           <button
             onClick={() => setActive("docking")}
-            className={`rounded-lg px-3 py-1.5 text-xs transition ${
-              active === "docking"
+            className={`rounded-lg px-3 py-1.5 text-xs transition ${active === "docking"
                 ? "bg-black text-white shadow"
                 : "text-gray-700 hover:bg-neutral-100"
-            }`}
+              }`}
           >
             Docking
           </button>
