@@ -182,7 +182,7 @@ function SimpleModal(props: {
       <div
         className={[
           "absolute right-1/2 top-1/2 -translate-y-1/2 translate-x-1/2 rounded-2xl bg-white p-5 shadow-xl",
-          wide ? "w-[1080px] h-[720px] max-w-[94vw] max-h-[90vh]" : "w-[480px]",
+          wide ? "w-[1280px] h-[800px] max-w-[96vw] max-h-[92vh]" : "w-[480px]",
         ].join(" ")}
       >
         <div className="mb-3 text-lg font-semibold">{title}</div>
@@ -191,6 +191,7 @@ function SimpleModal(props: {
     </div>
   );
 }
+
 
 /* =========================
  * 메인 페이지 (컨텍스트 소비자)
@@ -893,7 +894,7 @@ function PipelinePage() {
             wide
           >
             <div className="h-[calc(100%-1.5rem)]">
-              <div className="relative h-full w-full overflow-hidden rounded-xl">
+              <div className="relative h-full w-full overflow-auto rounded-xl">
                 {/* taskId를 'example'로 고정 */}
                 <DeepKinomePanel taskId={dkTaskId} />
               </div>
