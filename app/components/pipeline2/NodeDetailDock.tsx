@@ -656,13 +656,31 @@ export default function NodeDetailDock({
             {/* 파일이 바뀌면 안전하게 리마운트 되도록 key 부여 (권장) */}
             <div key={firstFile.id} className="grid grid-cols-2 gap-3 h-full">
               <div className="bg-neutral-900 rounded-xl p-2">
+                // NodeDetailDock.tsx — showSecondary 모달 내부
                 <NglViewerLite
                   source={{ kind: "url", url: contentUrlOf(firstFile.id), ext: "pdb" }}
                   background="transparent"
                   initialRepresentation="cartoon"
-                  // ✅ add: 로드 완료 시 NGL 핸들을 state에 저장
-                  onReady={(viewer) => setSecondaryViewer(viewer)}
+                  onReady={(stage, component, defaultRep) => {
+                    // SecondaryStructurePanel이 기대하는 shape로 변환
+                    setSecondaryViewer({
+                      stage,
+                      component,
+                      defaultRep: defaultRep ?? null,
+                      setDefaultRep: (rep: any) =>
+                        setSecondaryViewer((prev: any) => prev ? { ...prev, defaultRep: rep } : prev),
+
+                      highlightRep: null,
+                      setHighlightRep: (rep: any) =>
+                        setSecondaryViewer((prev: any) => prev ? { ...prev, highlightRep: rep } : prev),
+
+                      lastSele: null,
+                      setLastSele: (sele: string | null) =>
+                        setSecondaryViewer((prev: any) => prev ? { ...prev, lastSele: sele } : prev),
+                    });
+                  }}
                 />
+
               </div>
               <div className="bg-white rounded-xl ring-1 ring-zinc-200 overflow-auto p-3">
                 {/* ✅ 빈 any 금지: 실제 viewer를 넘겨야 함 */}
