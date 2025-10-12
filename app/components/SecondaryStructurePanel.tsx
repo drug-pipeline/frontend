@@ -2,15 +2,18 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-import { FiActivity } from "react-icons/fi";
 
 type ViewerStateLike = {
   stage: NGL.Stage | null;
   component: NGL.StructureComponent | null;
+
+  // ✅ NglWebapp/useViewerState와 키 이름 통일
   defaultRep: NGL.Representation | null;
   setDefaultRep?: (rep: NGL.Representation | null) => void;
+
   highlightRep: NGL.Representation | null;
   setHighlightRep?: (rep: NGL.Representation | null) => void;
+
   lastSele: string | null;
   setLastSele?: (sele: string | null) => void;
 };
@@ -383,6 +386,7 @@ export default function SecondaryStructurePanel({
 
   return (
     <div ref={hostRef} className={className ?? "w-full overflow-auto"}>
+      <h3 className="mb-2 text-base font-medium">Secondary Structure</h3>
       <canvas id="secondaryStructureCanvas" ref={canvasRef} />
     </div>
   );

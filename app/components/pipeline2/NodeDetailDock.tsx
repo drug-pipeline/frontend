@@ -137,6 +137,8 @@ export default function NodeDetailDock({
   onOpenSecondary,
   onOpenDeepKinome, // <<< added
 }: Props) {
+
+
   const [editMode, setEditMode] = useState(false);
   const [localName, setLocalName] = useState(node?.name ?? "");
 
@@ -154,6 +156,7 @@ export default function NodeDetailDock({
   const [showVisualizer, setShowVisualizer] = useState(false);
   const [showSecondary, setShowSecondary] = useState(false);
 
+  const [secondaryViewer, setSecondaryViewer] = useState<any>(null);
   // Note
   const nodeId = node?.id;
   const [note, setNote] = useState<string>("");
@@ -648,30 +651,39 @@ export default function NodeDetailDock({
       )}
 
       {showSecondary && firstFile && (
-        <Modal onClose={() => setShowSecondary(false)}>
+        <Modal onClose={() => { setShowSecondary(false); setSecondaryViewer(null); }}>
           <div className="w-[1080px] h-[680px] bg-white rounded-2xl p-3">
-            <div className="grid grid-cols-2 gap-3 h-full">
+            {/* 파일이 바뀌면 안전하게 리마운트 되도록 key 부여 (권장) */}
+            <div key={firstFile.id} className="grid grid-cols-2 gap-3 h-full">
               <div className="bg-neutral-900 rounded-xl p-2">
                 <NglViewerLite
                   source={{ kind: "url", url: contentUrlOf(firstFile.id), ext: "pdb" }}
                   background="transparent"
                   initialRepresentation="cartoon"
+                  // ✅ add: 로드 완료 시 NGL 핸들을 state에 저장
+                  onReady={(viewer) => setSecondaryViewer(viewer)}
                 />
               </div>
               <div className="bg-white rounded-xl ring-1 ring-zinc-200 overflow-auto p-3">
-                <SecondaryStructurePanel
-                  viewer={{ } as any}
-                />
+                {/* ✅ 빈 any 금지: 실제 viewer를 넘겨야 함 */}
+                {secondaryViewer ? (
+                  <SecondaryStructurePanel viewer={secondaryViewer} />
+                ) : (
+                  <div className="text-sm text-zinc-500">Loading secondary…</div>
+                )}
               </div>
             </div>
           </div>
         </Modal>
       )}
+
     </aside>
   );
 }
 
 function Modal({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
+
+
   return (
     <div className="fixed inset-0 z-[999]">
       <div className="absolute inset-0 bg-black/50 backdrop-blur" onClick={onClose} />

@@ -264,30 +264,11 @@ function PipelinePage() {
   const [dkOpen, setDkOpen] = useState<boolean>(false);
   const [dkTaskId, setDkTaskId] = useState<string>("example");
 
-  // NGL viewer state (타입 충돌 방지를 위해 any)
-  const [viewerStage, setViewerStage] = useState<any>(null);
-  const [viewerComp, setViewerComp] = useState<any>(null);
-  const [viewerDefaultRep, setViewerDefaultRep] = useState<any>(null);
-  const [viewerHighlightRep, setViewerHighlightRep] = useState<any>(null);
-  const [viewerLastSele, setViewerLastSele] = useState<string | null>(null);
+
 
   const { setHint: setHintCtx, beginDrag, endDrag, clearHint } = useConnectionHints();
-  const viewerProp = useMemo(
-    () => ({
-      stage: viewerStage,
-      setStage: setViewerStage,
-      component: viewerComp,
-      setComponent: setViewerComp,
-      defaultRep: viewerDefaultRep,
-      setDefaultRep: setViewerDefaultRep,
-      highlightRep: viewerHighlightRep,
-      setHighlightRep: setViewerHighlightRep,
-      lastSele: viewerLastSele,
-      setLastSele: setViewerLastSele,
-    }),
-    [viewerStage, viewerComp, viewerDefaultRep, viewerHighlightRep, viewerLastSele]
-  );
-
+  
+  
   // 프로젝트명 로드
   useEffect(() => {
     const loadName = async () => {
@@ -313,9 +294,9 @@ function PipelinePage() {
     const key = (typeToKey as any)[t] ?? "pdb-input";
     const safeStatus: NodeStatus =
       dto.status === "PENDING" ||
-      dto.status === "RUNNING" ||
-      dto.status === "SUCCESS" ||
-      dto.status === "FAILED"
+        dto.status === "RUNNING" ||
+        dto.status === "SUCCESS" ||
+        dto.status === "FAILED"
         ? dto.status
         : "PENDING";
 
@@ -795,16 +776,16 @@ function PipelinePage() {
               nodes={
                 selectedNodeId
                   ? nodes.map((n) =>
-                      n.id === selectedNodeId
-                        ? n
-                        : {
-                            ...n,
-                            style: {
-                              opacity: 0.9,
-                              filter: "grayscale(0.12) brightness(0.98)",
-                            },
-                          }
-                    )
+                    n.id === selectedNodeId
+                      ? n
+                      : {
+                        ...n,
+                        style: {
+                          opacity: 0.9,
+                          filter: "grayscale(0.12) brightness(0.98)",
+                        },
+                      }
+                  )
                   : nodes
               }
               edges={edges}
@@ -850,42 +831,16 @@ function PipelinePage() {
               setVizOpen(true);
             }}
             onOpenSecondary={() => {
+              console.log("[Action] open Secondary modal requested");
               setSecondaryOpen(true);
             }}
+
             onOpenDeepKinome={() => {
               setDkTaskId("example");
               setDkOpen(true);
             }}
           />
-
-          {/* Visualizer 모달 (NGL) */}
-          <SimpleModal open={vizOpen} title="Visualizer" onClose={() => setVizOpen(false)} wide>
-            <div className="h-[calc(100%-1.5rem)]">
-              <div className="relative h-full w-full">
-                <NglWebapp viewer={viewerProp as any} />
-              </div>
-            </div>
-          </SimpleModal>
-
-          {/* Secondary + NGL Split Modal */}
-          <SimpleModal
-            open={secondaryOpen}
-            title="Visualizer + Secondary Structure"
-            onClose={() => setSecondaryOpen(false)}
-            wide
-          >
-            <div className="h-[calc(100%-1.5rem)]">
-              <div className="grid h-full w-full grid-cols-2 gap-4">
-                <div className="relative h-full w-full rounded-xl ring-1 ring-zinc-200 overflow-hidden">
-                  <NglWebapp viewer={viewerProp as any} />
-                </div>
-                <div className="relative h-full w-full rounded-xl ring-1 ring-zinc-200 overflow-auto p-3">
-                  <SecondaryStructurePanel viewer={viewerProp as any} />
-                </div>
-              </div>
-            </div>
-          </SimpleModal>
-
+          
           {/* DeepKinome 모달 (example task) */}
           <SimpleModal
             open={dkOpen}
