@@ -35,6 +35,7 @@ import NodeDetailDock, {
 } from "@/app/components/pipeline2/NodeDetailDock";
 import NglWebapp from "@/app/components/NglWebapp";
 import SecondaryStructurePanel from "@/app/components/SecondaryStructurePanel";
+import { ConnectionHintsProvider } from "@/app/components/pipeline2/ConnectionHintsContext";
 
 /* =========================
  * 서버 스펙 타입
@@ -690,6 +691,7 @@ function PipelinePage() {
       </div>
 
       {/* 본문 */}
+      <ConnectionHintsProvider>
       <div className="grid grid-cols-[300px_1fr]">
         <ModuleSidebar modules={MODULES} onCreate={createNode} />
 
@@ -819,7 +821,7 @@ function PipelinePage() {
           </SimpleModal>
         </main>
       </div>
-
+</ConnectionHintsProvider>
       {/* 하이라이트 시 디밍 효과 */}
       <style>{`
         .selection-has-node .react-flow__node { transition: filter 120ms ease, opacity 120ms ease; }
