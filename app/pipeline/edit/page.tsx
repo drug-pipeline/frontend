@@ -38,8 +38,6 @@ import {
 import NodeDetailDock, {
   type MinimalNodeDTO,
 } from "@/app/components/pipeline2/NodeDetailDock";
-import NglWebapp from "@/app/components/NglWebapp";
-import SecondaryStructurePanel from "@/app/components/SecondaryStructurePanel";
 import DeepKinomePanel from "@/app/components/DeepKinomePanel"; // ★ 추가
 import {
   ConnectionHintsProvider,
@@ -182,7 +180,7 @@ function SimpleModal(props: {
       <div
         className={[
           "absolute right-1/2 top-1/2 -translate-y-1/2 translate-x-1/2 rounded-2xl bg-white p-5 shadow-xl",
-          wide ? "w-[1280px] h-[800px] max-w-[96vw] max-h-[92vh]" : "w-[480px]",
+          wide ? "w-[95vw] h-[95vh]" : "w-[480px]",
         ].join(" ")}
       >
         <div className="mb-3 text-lg font-semibold">{title}</div>
