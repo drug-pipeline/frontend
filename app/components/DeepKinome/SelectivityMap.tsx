@@ -559,7 +559,7 @@ const handleMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
       {tooltip.visible && (
         <div
           style={{
-            position: "fixed",
+            position: "absolute",
             top: tooltip.y,
             left: tooltip.x,
             backgroundColor: "rgba(0,0,0,0.8)",
