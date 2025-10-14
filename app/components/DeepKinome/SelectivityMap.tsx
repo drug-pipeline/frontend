@@ -188,39 +188,45 @@ const SelectivityMap: React.FC<SelectivityMapProps> = ({
     "Click each cell in the heatmap to view structure and docking pose in the next session"
   );
 
-  const handleMouseEnter = (
-    event: React.MouseEvent<HTMLDivElement>,
-    rowIndex: number,
-    colIndex: number
-  ) => {
-    if (rowIndex > 0 && colIndex > 0) {
-      setHoveredCell({ rowIndex, colIndex });
-      const val = data[rowIndex][colIndex];
-      const cid = data[rowIndex][0];
-      const uniprotId = data[0][colIndex];
-      const num = toNumber(val);
-      const tooltipContent = `CID: ${String(cid)}<br>UniprotID: ${String(uniprotId)}<br>% Inhibition: ${
-        Number.isFinite(num) ? num.toFixed(2) : "NaN"
-      }`;
-      setTooltip({
-        visible: true,
-        content: tooltipContent,
-        x: event.pageX + 10,
-        y: event.pageY + 10,
-      });
-    }
-  };
+// 교체: 컨테이너 기준 좌표 계산
+function toLocalXY(e: React.MouseEvent<HTMLDivElement>) {
+  const el = containerRef.current!;
+  const rect = el.getBoundingClientRect();
+  const x = e.clientX - rect.left + el.scrollLeft + 10;
+  const y = e.clientY - rect.top + el.scrollTop + 10;
+  return { x, y };
+}
+
+const handleMouseEnter = (
+  event: React.MouseEvent<HTMLDivElement>,
+  rowIndex: number,
+  colIndex: number
+) => {
+  if (rowIndex > 0 && colIndex > 0) {
+    setHoveredCell({ rowIndex, colIndex });
+    const val = data[rowIndex][colIndex];
+    const cid = data[rowIndex][0];
+    const uniprotId = data[0][colIndex];
+    const num = toNumber(val);
+    const tooltipContent = `CID: ${String(cid)}<br>UniprotID: ${String(uniprotId)}<br>% Inhibition: ${
+      Number.isFinite(num) ? num.toFixed(2) : "NaN"
+    }`;
+    const { x, y } = toLocalXY(event);
+    setTooltip({ visible: true, content: tooltipContent, x, y });
+  }
+};
+
+const handleMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
+  if (!tooltip.visible) return;
+  const { x, y } = toLocalXY(event);
+  setTooltip((p) => ({ ...p, x, y }));
+};
 
   const handleMouseLeave = () => {
     setHoveredCell({ rowIndex: null, colIndex: null });
     setTooltip({ visible: false, content: "", x: 0, y: 0 });
   };
 
-  const handleMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (tooltip.visible) {
-      setTooltip((p) => ({ ...p, x: event.pageX + 10, y: event.pageY + 10 }));
-    }
-  };
 
   const handleCellClick = (rowIndex: number, colIndex: number) => {
     if (rowIndex > 0 && colIndex > 0) {
