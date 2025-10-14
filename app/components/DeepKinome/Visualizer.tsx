@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useMemo } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import * as NGL from "ngl";
 
 /* -----------------------------
@@ -78,10 +78,8 @@ type VisualizerProps = NGLViewerProps;
    Component
 --------------------------------*/
 const NGLViewer: React.FC<NGLViewerProps> = ({ uniprotId, cid, taskId }) => {
-  const API_BASE = useMemo(() => {
-    const fromEnv = process.env.NEXT_PUBLIC_DK_API_BASE;
-    return fromEnv && fromEnv.length > 0 ? fromEnv : "/api/dk";
-  }, []);
+  // SIMPLE style API base
+  const API_BASE = "http://34.61.162.19/api/deepkinome";
 
   const stageHostRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<NglStage | null>(null);
@@ -98,7 +96,10 @@ const NGLViewer: React.FC<NGLViewerProps> = ({ uniprotId, cid, taskId }) => {
       if (cid) qs.set("cid", cid);
       if (taskId) qs.set("taskId", taskId);
 
-      const response = await fetch(`${API_BASE}/api/visualizer/pdb/download?${qs.toString()}`);
+      // CHANGED: /api 제거
+      const response = await fetch(`${API_BASE}/visualizer/pdb/download?${qs.toString()}`, {
+        cache: "no-store",
+      });
 
       if (!response.ok) throw new Error("Failed to fetch PDB file");
       const blob = await response.blob();
@@ -116,13 +117,16 @@ const NGLViewer: React.FC<NGLViewerProps> = ({ uniprotId, cid, taskId }) => {
     }
   };
 
-  // Pocket residues 정보 가져오기
+  // Pocket residues
   useEffect(() => {
     if (!uniprotId) return;
 
     const fetchPocketResidues = async (): Promise<void> => {
       try {
-        const response = await fetch(`${API_BASE}/api/pocket?id=${encodeURIComponent(uniprotId)}`);
+        // CHANGED: /api 제거
+        const response = await fetch(`${API_BASE}/pocket?id=${encodeURIComponent(uniprotId)}`, {
+          cache: "no-store",
+        });
         const data: { residues: number[]; error?: string } = await response.json();
         if (!response.ok) {
           throw new Error(data.error || "Failed to fetch pocket data");
@@ -133,14 +137,13 @@ const NGLViewer: React.FC<NGLViewerProps> = ({ uniprotId, cid, taskId }) => {
       }
     };
 
-    fetchPocketResidues();
+    void fetchPocketResidues();
   }, [uniprotId, API_BASE]);
 
   // NGL Stage 생성 및 파일 로드
   useEffect(() => {
     if (!stageHostRef.current) return;
 
-    // Stage 초기화(필요시 재사용)
     if (!stageRef.current) {
       const ngl = (NGL as unknown as NglModule);
       stageRef.current = new ngl.Stage(stageHostRef.current, { backgroundColor: "white" });
@@ -151,10 +154,9 @@ const NGLViewer: React.FC<NGLViewerProps> = ({ uniprotId, cid, taskId }) => {
     const handleResize = (): void => stage.handleResize();
     window.addEventListener("resize", handleResize, false);
 
-    // 기존 컴포넌트 제거
     stage.removeAllComponents();
 
-    // Tooltip DOM
+    // Tooltip
     const tooltip = document.createElement("div");
     Object.assign(tooltip.style, {
       display: "none",
@@ -197,27 +199,26 @@ const NGLViewer: React.FC<NGLViewerProps> = ({ uniprotId, cid, taskId }) => {
 
     stage.signals.hovered.add(onHovered);
 
-    // pocket selection string
     const pocketSelection =
       pocketResidues.length > 0 ? pocketResidues.map((resno) => `${resno}`).join(" or ") : "";
 
+    // CHANGED: /api 제거
     const targetUrl =
-  `${API_BASE}/api/visualizer/pdb/target?uniprotId=${encodeURIComponent(uniprotId)}` +
-  (cid ? `&cid=${encodeURIComponent(cid)}` : "") +
-  (taskId ? `&taskId=${encodeURIComponent(taskId)}` : "");
+      `${API_BASE}/visualizer/pdb/target?uniprotId=${encodeURIComponent(uniprotId)}` +
+      (cid ? `&cid=${encodeURIComponent(cid)}` : "") +
+      (taskId ? `&taskId=${encodeURIComponent(taskId)}` : "");
 
-const lowestUrl =
-  `${API_BASE}/api/visualizer/pdb/lowest?uniprotId=${encodeURIComponent(uniprotId)}` +
-  (cid ? `&cid=${encodeURIComponent(cid)}` : "") +
-  (taskId ? `&taskId=${encodeURIComponent(taskId)}` : "");
-
+    const lowestUrl =
+      `${API_BASE}/visualizer/pdb/lowest?uniprotId=${encodeURIComponent(uniprotId)}` +
+      (cid ? `&cid=${encodeURIComponent(cid)}` : "") +
+      (taskId ? `&taskId=${encodeURIComponent(taskId)}` : "");
 
     let disposed = false;
     let timerId: number | null = null;
 
     async function loadTarget(): Promise<void> {
       try {
-        const resp = await fetch(targetUrl);
+        const resp = await fetch(targetUrl, { cache: "no-store" });
         if (!resp.ok) throw new Error(`HTTP error! status: ${resp.status}`);
         const blob = await resp.blob();
         const url = URL.createObjectURL(blob);
@@ -248,7 +249,6 @@ const lowestUrl =
             });
           }
         } else {
-          // cartoon
           loadedTarget.addRepresentation("cartoon", { color: "white" });
           if (showPocket && pocketSelection) {
             loadedTarget.addRepresentation("cartoon", { color: "green", sele: pocketSelection });
@@ -263,7 +263,7 @@ const lowestUrl =
 
     async function loadLowest(): Promise<void> {
       try {
-        const resp = await fetch(lowestUrl);
+        const resp = await fetch(lowestUrl, { cache: "no-store" });
         if (!resp.ok) throw new Error(`HTTP error! status: ${resp.status}`);
         const blob = await resp.blob();
         const url = URL.createObjectURL(blob);
@@ -275,7 +275,6 @@ const lowestUrl =
         if (renderMode === "cartoon") {
           loadedLig.addRepresentation("ball+stick", {});
         } else {
-          // surface
           loadedLig.addRepresentation("surface", {
             surfaceType: "av",
             probeRadius: 1.4,
@@ -294,13 +293,11 @@ const lowestUrl =
       }
     }
 
-    // 비동기 로드 실행
     (async () => {
       await loadTarget();
       await loadLowest();
     })();
 
-    // cleanup
     return () => {
       disposed = true;
       if (timerId !== null) {
@@ -312,12 +309,11 @@ const lowestUrl =
       tooltip.remove();
       window.removeEventListener("resize", handleResize, false);
     };
-    // pocketResidues까지 포함: pocket 표시가 바뀌면 재렌더링 필요
+  // pocketResidues 등 상태가 변할 때 재로딩
   }, [uniprotId, cid, taskId, renderMode, showPocket, pocketResidues, isInitialLoad, API_BASE]);
 
   return (
     <div>
-      
       <div className="mt-4 flex space-x-4 items-center overflow-visible">
         <div>
           <label htmlFor="renderMode" className="mr-2 font-bold">
@@ -351,7 +347,6 @@ const lowestUrl =
         >
           Download PDB
         </button>
-        
       </div>
       <div ref={stageHostRef} className="w-full h-[50vh] md:h-[60vh] lg:h-[65vh] bg-white" />
     </div>
@@ -360,7 +355,6 @@ const lowestUrl =
 
 const Visualizer: React.FC<VisualizerProps> = ({ uniprotId, cid, taskId }) => {
   const viewerKey = `${uniprotId}-${cid ?? ""}-${taskId ?? ""}`;
-
   return (
     <div className="flex flex-col items-center">
       <div className="w-full p-4">
