@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 
 /* =========================
    Types
@@ -8,31 +8,18 @@ import React, { useEffect, useMemo, useState } from "react";
 
 type PdbId = string | number;
 
-type PdbEntry = {
-  id?: string;
-};
-
-type PdbExptl = {
-  method?: string;
-};
-
-type PdbStruct = {
-  title?: string;
-};
-
+type PdbEntry = { id?: string };
+type PdbExptl = { method?: string };
+type PdbStruct = { title?: string };
 type PdbData = {
   entry?: PdbEntry;
   exptl?: PdbExptl[];
   struct?: PdbStruct;
 };
 
-type PDBProps = {
-  pdbId?: PdbId;
-};
+type PDBProps = { pdbId?: PdbId };
 
-type PdbApiEnvelope =
-  | { content?: string } // 서버가 content에 문자열(JSON)을 담아주는 경우
-  | Record<string, unknown>; // 일반 JSON
+type PdbApiEnvelope = { content?: string } | Record<string, unknown>;
 
 /* =========================
    Helpers
@@ -40,6 +27,26 @@ type PdbApiEnvelope =
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function hasContentString(v: unknown): v is { content: string } {
+  return isRecord(v) && typeof v.content === "string";
+}
+
+function isPdbData(v: unknown): v is PdbData {
+  if (!isRecord(v)) return false;
+  // 최소 구조만 확인 (필요시 더 강화 가능)
+  const okEntry =
+    typeof v.entry === "undefined" ||
+    (isRecord(v.entry) && (typeof v.entry.id === "string" || typeof v.entry.id === "undefined"));
+  const okExptl =
+    typeof v.exptl === "undefined" ||
+    (Array.isArray(v.exptl) &&
+      v.exptl.every((e) => isRecord(e) && (typeof e.method === "string" || typeof e.method === "undefined")));
+  const okStruct =
+    typeof v.struct === "undefined" ||
+    (isRecord(v.struct) && (typeof v.struct.title === "string" || typeof v.struct.title === "undefined"));
+  return okEntry && okExptl && okStruct;
 }
 
 function safeParseJson<T>(text: string): T | null {
@@ -58,95 +65,79 @@ export default function PDB({ pdbId }: PDBProps) {
   const [pdbData, setPdbData] = useState<PdbData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // 환경변수 → 기본값("/api/dk")
-  const API_BASE = useMemo(() => {
-    const fromEnv = process.env.NEXT_PUBLIC_DK_API_BASE;
-    return fromEnv && fromEnv.length > 0 ? fromEnv : "/api/dk";
-  }, []);
+  // SIMPLE style API base (백엔드 프록시와 동일)
+  const API_BASE = "http://34.61.162.19/api/deepkinome";
 
   useEffect(() => {
-    if (!pdbId && pdbId !== 0) {
+    if (pdbId === undefined || pdbId === null) {
       setPdbData(null);
       setError(null);
       return;
     }
 
     const ac = new AbortController();
-    const run = async () => {
+
+    (async () => {
       try {
         setError(null);
         setPdbData(null);
 
-        // 쿼리스트링 구성
-        const qs = new URLSearchParams();
-        qs.set("id", String(pdbId));
-
-        // 요청 엔드포인트 (요청하신 형태)
-        const url = `${API_BASE}/api/pdb?${qs.toString()}`;
+        const qs = new URLSearchParams({ id: String(pdbId) });
+        const url = `${API_BASE}/pdb?${qs.toString()}`;
         console.log("[PDB] fetching:", url);
-        const response = await fetch(url, { signal: ac.signal });
+
+        const response = await fetch(url, { signal: ac.signal, cache: "no-store" });
         console.log("[PDB] status:", response.status, response.statusText);
 
-
         if (!response.ok) {
-  const text = await response.text().catch(() => "(no body)");
-  console.error("[PDB] !ok, body:", text);
-  throw new Error(`PDB fetch failed: ${response.status} ${response.statusText}`);
-}
-        // content-type에 따라 파싱 전략 분기
+          const text = await response.text().catch(() => "(no body)");
+          console.error("[PDB] !ok, body:", text);
+          throw new Error(`PDB fetch failed: ${response.status} ${response.statusText}`);
+        }
+
         const ctype = response.headers.get("content-type") ?? "";
         let parsed: PdbData | null = null;
 
         if (ctype.includes("application/json")) {
-          const json = (await response.json()) as PdbApiEnvelope;
+          const json: unknown = (await response.json()) as PdbApiEnvelope;
 
-          // 서버가 {"content": "<json-string>"} 형태로 줄 수도 있음
-          if (isRecord(json) && typeof json.content === "string") {
-            // content 안의 JSON 문자열을 다시 파싱
-            parsed = safeParseJson<PdbData>(json.content) ?? null;
-          } else {
-            // 일반 JSON을 PDB 데이터로 가정 (서버 응답이 이미 전개된 케이스)
-            parsed = json as unknown as PdbData;
+          if (hasContentString(json)) {
+            parsed = safeParseJson<PdbData>(json.content);
+          } else if (isPdbData(json)) {
+            parsed = json;
           }
         } else {
-          // JSON이 아닌 경우(텍스트) → content에 JSON 문자열이 담겨있었다고 가정하고 파싱 시도
           const text = await response.text();
           parsed = safeParseJson<PdbData>(text);
         }
 
-        if (!parsed) {
-          throw new Error("Failed to parse PDB response.");
-        }
-
+        if (!parsed) throw new Error("Failed to parse PDB response.");
         setPdbData(parsed);
       } catch (e) {
         if (ac.signal.aborted) return;
         console.error("Error fetching PDB data:", e);
         setError("Failed to fetch PDB data.");
       }
-    };
+    })();
 
-    void run();
     return () => ac.abort();
   }, [API_BASE, pdbId]);
 
-  if (!pdbId && pdbId !== 0) {
+  if (pdbId === undefined || pdbId === null) {
     return <div>No PDB ID provided.</div>;
   }
 
-  if (error) {
-    return <div>{error}</div>;
-  }
-
-  if (!pdbData) {
-    return <div>Loading PDB data...</div>;
-  }
+  if (error) return <div>{error}</div>;
+  if (!pdbData) return <div>Loading PDB data...</div>;
 
   const { entry, exptl, struct } = pdbData;
 
   const handleOpenNewTab = () => {
-    // 원래 사용하던 페이지 라우트 유지
-    window.open(`/deepkinome/pdb?id=${encodeURIComponent(String(pdbId))}`, "_blank", "noopener,noreferrer");
+    window.open(
+      `/deepkinome/pdb?id=${encodeURIComponent(String(pdbId))}`,
+      "_blank",
+      "noopener,noreferrer"
+    );
   };
 
   return (
