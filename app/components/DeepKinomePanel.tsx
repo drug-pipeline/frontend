@@ -252,7 +252,7 @@ export default function DeepKinomePanel({
         )}
       </div>
       {selUniprot && selCidForViewer && taskId ? (
-        <div className="h-full w-full overflow-hidden rounded-xl">
+        <div className="h-full w-full overflow-auto rounded-xl">
           <Visualizer
             uniprotId={selUniprot}
             cid={selCidForViewer}
