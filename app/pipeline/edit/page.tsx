@@ -43,6 +43,7 @@ import {
   ConnectionHintsProvider,
   useConnectionHints,
 } from "@/app/components/pipeline2/ConnectionHintsContext";
+import { allowConnection } from "@/app/components/pipeline2/connectionRules";
 
 /* =========================
  * 서버 스펙 타입
@@ -153,30 +154,7 @@ const typeToKey: Record<ServerNodeType, ModuleKey> = {
  * 연결 규칙
  * =======================*/
 // 기존 allowConnection 바로 아래에 DeepKinome 규칙 추가
-function allowConnection(
-  sourceNode?: Node<NodeData>,
-  targetNode?: Node<NodeData>
-): boolean {
-  const sKey = sourceNode?.data?.key as ModuleKey | undefined;
-  const tKey = targetNode?.data?.key as ModuleKey | undefined;
-  if (!sKey || !tKey) return false;
 
-  // ✅ DeepKinome 규칙 추가: PDB → DeepKinome 허용
-  if (sKey === "pdb-input" && tKey === "deep-kinome") return true;
-
-  if (
-    sKey === "pdb-input" &&
-    (tKey === "visualizer" ||
-      tKey === "vis-secondary" ||
-      tKey === "distance-map" ||
-      tKey === "pdb-info" ||
-      tKey === "uniprot-info")
-  ) {
-    return true;
-  }
-  if (sKey === "compound-input" && tKey === "admet") return true;
-  return false;
-}
 
 
 /* =========================
