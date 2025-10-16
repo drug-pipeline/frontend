@@ -9,7 +9,7 @@ type Toggles = Record<string, boolean>;
 
 export async function POST(req: NextRequest) {
   try {
-    const backend = process.env.NEXT_PUBLIC_BACKEND_URL;
+    const backend = "http://34.61.162.19/api/py"
     if (!backend) {
       console.error("❌ NEXT_PUBLIC_BACKEND_URL is not set");
       return NextResponse.json({ error: "NEXT_PUBLIC_BACKEND_URL is not set" }, { status: 500 });
