@@ -60,8 +60,25 @@ type ServerNodeType =
   | "PDB_INFO"
   | "DEEPKINOME"; // ★ 추가
 
-// NOTE: 여기서는 기존 타입만 유지(DeepKinome는 런타임 캐스팅으로 처리)
+const SERVER_NODE_TYPES: ServerNodeType[] = [
+  "PDB",
+  "COMPOUND",
+  "VISUALIZER",
+  "SECONDARY",
+  "DISTANCE_MAP",
+  "ADMET",
+  "UNIPROT_INFO",
+  "PDB_INFO",
+  "DEEPKINOME",
+];
 
+function toServerNodeType(x: unknown): ServerNodeType {
+  return SERVER_NODE_TYPES.includes(x as ServerNodeType)
+    ? (x as ServerNodeType)
+    : "PDB";
+}
+
+// NOTE: 여기서는 기존 타입만 유지(DeepKinome는 런타임 캐스팅으로 처리)
 type ServerNodeDTO = {
   id: number;
   projectId: number;
@@ -114,7 +131,12 @@ const keyToType: Record<string, ServerNodeType> = {
   "deep-kinome": "DEEPKINOME", // ★ 추가
 };
 
-const typeToKey: Record<ServerNodeType, string> = {
+function toTypeFromKey(k: string): ServerNodeType {
+  return keyToType[k] ?? "PDB";
+}
+
+
+const typeToKey: Record<ServerNodeType, ModuleKey> = {
   PDB: "pdb-input",
   COMPOUND: "compound-input",
   VISUALIZER: "visualizer",
@@ -288,8 +310,8 @@ function PipelinePage() {
 
   // DTO -> Flow Node
   const dtoToFlowNode = useCallback((dto: ServerNodeDTO): Node<NodeData> => {
-    const t = String(dto.type) as ServerNodeType;
-    const key = (typeToKey as any)[t] ?? "pdb-input";
+    const t = toServerNodeType(dto.type);
+    const key: ModuleKey = typeToKey[t] ?? "pdb-input";
     const safeStatus: NodeStatus =
       dto.status === "PENDING" ||
         dto.status === "RUNNING" ||
@@ -384,7 +406,7 @@ function PipelinePage() {
 
       const payload = {
         projectId,
-        type: (keyToType[spec.key] ?? "PDB") as ServerNodeType,
+        type: toTypeFromKey(spec.key),
         name: spec.key === "visualizer" ? "Visualizer" : spec.title,
         status: "PENDING" as NodeStatus,
         x: Math.round(pos.x),
@@ -477,12 +499,15 @@ function PipelinePage() {
           console.error("[Post-link Visual SUCCESS sync] error:", e);
         }
 
-        setEdges((eds) =>
-          addEdge(
-            { ...conn, id: String(created.id), animated: true, style: { strokeWidth: 2 } } as any,
-            eds
-          )
-        );
+        // ---- remove 'any' cast here by constructing a proper Edge
+        const newEdge: Edge = {
+          id: String(created.id),
+          source: String(sourceId),
+          target: String(targetId),
+          animated: true,
+          style: { strokeWidth: 2 },
+        };
+        setEdges((eds) => addEdge(newEdge, eds));
       } catch (err) {
         console.error("[Create Link] error:", err);
         alert("링크 생성 중 오류가 발생했습니다.");
@@ -626,7 +651,7 @@ function PipelinePage() {
         let lines: string[] = [];
         const ct = res.headers.get("content-type") || "";
         if (ct.includes("application/json")) {
-          const data: Partial<NodeLogsDTO> = await res.json().catch(() => ({}));
+          const data: Partial<NodeLogsDTO> = await res.json().catch(() => ({} as Partial<NodeLogsDTO>));
           if (Array.isArray(data?.lines)) lines = data.lines!;
         } else {
           const text = await res.text().catch(() => "");
@@ -735,6 +760,19 @@ function PipelinePage() {
   const onConnectEnd: OnConnectEnd = () => endAllDrag(); // 드롭 완료 시
   const onConnectStop = () => endAllDrag(); // 드롭 취소/실패 시
 
+  // MinimalNodeDTO 안전 변환기 (필수 필드만 매핑)
+  const toMinimalNode = (dto: ServerNodeDTO | null): MinimalNodeDTO | null => {
+    if (!dto) return null;
+    const minimal: Partial<MinimalNodeDTO> = {
+      // 추정 필드 매핑: 프로젝트 구조에 맞춰 필요한 최소 필드만 제공
+      id: dto.id as unknown as MinimalNodeDTO["id"],
+      name: dto.name as unknown as MinimalNodeDTO["name"],
+      type: String(dto.type) as unknown as MinimalNodeDTO["type"],
+      status: dto.status as unknown as MinimalNodeDTO["status"],
+    };
+    return minimal as MinimalNodeDTO;
+  };
+
   return (
     <div
       className={[
@@ -774,16 +812,16 @@ function PipelinePage() {
               nodes={
                 selectedNodeId
                   ? nodes.map((n) =>
-                    n.id === selectedNodeId
-                      ? n
-                      : {
-                        ...n,
-                        style: {
-                          opacity: 0.9,
-                          filter: "grayscale(0.12) brightness(0.98)",
-                        },
-                      }
-                  )
+                      n.id === selectedNodeId
+                        ? n
+                        : {
+                            ...n,
+                            style: {
+                              opacity: 0.9,
+                              filter: "grayscale(0.12) brightness(0.98)",
+                            },
+                          }
+                    )
                   : nodes
               }
               edges={edges}
@@ -807,7 +845,7 @@ function PipelinePage() {
           {/* 우측 상단 Node Detail Dock */}
           <NodeDetailDock
             open={!!selectedNodeId}
-            node={detailNode as unknown as MinimalNodeDTO}
+            node={toMinimalNode(detailNode) as MinimalNodeDTO}
             saving={savingNode}
             onRename={renameSelectedNode}
             onRefreshLogs={async () => {
@@ -832,7 +870,6 @@ function PipelinePage() {
               console.log("[Action] open Secondary modal requested");
               setSecondaryOpen(true);
             }}
-
             onOpenDeepKinome={() => {
               setDkTaskId("example");
               setDkOpen(true);
