@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { getNames } from "country-list";
 
 type FormState = {
   username: string;
@@ -80,7 +81,6 @@ function Signup() {
     e?.preventDefault();
     setSubmitted(true);
     if (Object.keys(errors).length === 0) {
-      // TODO: Hook up to your API later
       console.log("Signup payload:", form);
       alert(
         "Account created (demo).\n\nA verification email will be sent to your institutional address."
@@ -90,7 +90,6 @@ function Signup() {
 
   return (
     <main className="relative flex min-h-screen flex-col bg-white text-zinc-900">
-      {/* Inject base styles for .input class */}
       <StyleInjector />
 
       {/* Floating buttons (Docs + Help) */}
@@ -127,7 +126,7 @@ function Signup() {
         <div className="relative rounded-2xl p-[1px]">
           <div className="absolute inset-0 rounded-2xl bg-[conic-gradient(from_120deg,rgba(0,0,0,0.1),rgba(0,0,0,0.04),rgba(0,0,0,0.12))]" />
           <div className="relative grid gap-8 rounded-2xl bg-white/80 p-6 backdrop-blur-sm sm:grid-cols-5 sm:p-8">
-            {/* Left: Email Verification (softer tone) */}
+            {/* Left: Email Verification */}
             <div className="sm:col-span-2">
               <div className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
                 <div className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white/90 px-3 py-1 text-[11px] font-semibold tracking-tight text-zinc-900 shadow-sm">
@@ -138,10 +137,10 @@ function Signup() {
                   Use your institutional email
                 </h3>
                 <p className="mt-2 text-sm text-zinc-700">
-                  To help keep research spaces trustworthy and secure,
-                  we’ll send a brief verification link to your school or institute address
-                  after you sign up. Supported academic/research domains include{" "}
-                  <code className="rounded bg-zinc-100 px-1 py-0.5">.ac</code>,{" "}
+                  To help keep research spaces trustworthy and secure, we’ll
+                  send a brief verification link to your school or institute
+                  address after you sign up. Supported academic/research domains
+                  include <code className="rounded bg-zinc-100 px-1 py-0.5">.ac</code>,{" "}
                   <code className="rounded bg-zinc-100 px-1 py-0.5">.edu</code>,{" "}
                   <code className="rounded bg-zinc-100 px-1 py-0.5">.ac.kr</code>,{" "}
                   <code className="rounded bg-zinc-100 px-1 py-0.5">.edu.kr</code>,{" "}
@@ -165,8 +164,9 @@ function Signup() {
                 <div className="mt-5 h-px w-full bg-zinc-200/80" />
 
                 <p className="mt-4 text-xs text-zinc-600">
-                  Tip: If you have multiple addresses, use the one issued by your
-                  school or research organization for a smoother verification.
+                  Tip: If you have multiple addresses, use the one issued by
+                  your school or research organization for a smoother
+                  verification.
                 </p>
               </div>
             </div>
@@ -269,25 +269,12 @@ function Signup() {
                   />
                 </Field>
 
-                {/* Country */}
+                {/* Country (combobox) */}
                 <Field label="Country">
-                  <select
-                    className={`input ${INPUT_EMPH}`}
+                  <CountryCombobox
                     value={form.country}
-                    onChange={(e) => onChange("country", e.target.value)}
-                  >
-                    <option value="">Select</option>
-                    <option>Korea, Republic of</option>
-                    <option>United States</option>
-                    <option>Japan</option>
-                    <option>China</option>
-                    <option>Canada</option>
-                    <option>Germany</option>
-                    <option>United Kingdom</option>
-                    <option>France</option>
-                    <option>Australia</option>
-                    <option>Other</option>
-                  </select>
+                    onChange={(val) => onChange("country", val)}
+                  />
                 </Field>
 
                 {/* Role */}
@@ -391,6 +378,160 @@ function Signup() {
       <SiteFooter />
     </main>
   );
+}
+
+/* ── Country Combobox ───────────────────────────────────────────────────── */
+
+function CountryCombobox({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (val: string) => void;
+}) {
+  // 모든 국가명 불러오기 + 정렬 (최초 1회 메모)
+  const allCountries = useMemo(() => {
+    try {
+      const names = getNames(); // string[]
+      return [...names].sort((a, b) => a.localeCompare(b));
+    } catch {
+      // 안전장치: 라이브러리 로드 실패 시 최소값
+      return ["Korea, Republic of", "United States", "Japan", "China", "Canada"];
+    }
+  }, []);
+
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState(value ?? "");
+  const [activeIndex, setActiveIndex] = useState<number>(-1);
+  const listRef = useRef<HTMLUListElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // 외부에서 value가 바뀌면 입력창도 동기화
+  useEffect(() => {
+    setQuery(value ?? "");
+  }, [value]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return allCountries;
+    return allCountries.filter((c) => c.toLowerCase().includes(q));
+  }, [allCountries, query]);
+
+  function commitSelection(country: string) {
+    onChange(country);
+    setQuery(country);
+    setOpen(false);
+    setActiveIndex(-1);
+    inputRef.current?.blur();
+  }
+
+  function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (!open && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      setOpen(true);
+      return;
+    }
+    if (!open) return;
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveIndex((i) =>
+        Math.min(i + 1, Math.max(0, filtered.length - 1))
+      );
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveIndex((i) => Math.max(i - 1, 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (activeIndex >= 0 && activeIndex < filtered.length) {
+        commitSelection(filtered[activeIndex]);
+      } else if (filtered.length > 0) {
+        commitSelection(filtered[0]);
+      }
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      setOpen(false);
+      setActiveIndex(-1);
+    }
+  }
+
+  // 활성 항목이 바뀔 때 스크롤 가시화
+  useEffect(() => {
+    if (!listRef.current || activeIndex < 0) return;
+    const el = listRef.current.children[activeIndex] as HTMLElement | undefined;
+    el?.scrollIntoView({ block: "nearest" });
+  }, [activeIndex]);
+
+  return (
+    <div className="relative">
+      <input
+        ref={inputRef}
+        type="text"
+        placeholder="Start typing: e.g., Korea, United..."
+        className={`input ${INPUT_EMPH}`}
+        role="combobox"
+        aria-expanded={open}
+        aria-controls="country-listbox"
+        aria-autocomplete="list"
+        value={query}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={onKeyDown}
+      />
+
+      {open && (
+        <ul
+          id="country-listbox"
+          ref={listRef}
+          role="listbox"
+          className="absolute z-40 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-zinc-200 bg-white shadow-lg"
+        >
+          {filtered.length === 0 && (
+            <li className="px-3 py-2 text-sm text-zinc-500">No matches</li>
+          )}
+          {filtered.map((name, idx) => {
+            const active = idx === activeIndex;
+            return (
+              <li
+                key={name}
+                role="option"
+                aria-selected={active}
+                onMouseEnter={() => setActiveIndex(idx)}
+                onMouseDown={(e) => e.preventDefault()} // 포커스 유지
+                onClick={() => commitSelection(name)}
+                className={`cursor-pointer px-3 py-2 text-sm ${
+                  active ? "bg-zinc-100" : "bg-white"
+                } hover:bg-zinc-50`}
+              >
+                {name}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {/* 바깥 클릭 닫기 */}
+      <OutsideClick onOutside={() => setOpen(false)}>
+        {/* 포털 없이 동일 DOM 내에서 감시만 수행 */}
+      </OutsideClick>
+    </div>
+  );
+}
+
+/** 바깥 클릭 감지용 (간단 버전) */
+function OutsideClick({ onOutside, children }: { onOutside: () => void; children?: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    function handle(e: MouseEvent) {
+      if (!ref.current) return;
+      if (!ref.current.contains(e.target as Node)) onOutside();
+    }
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [onOutside]);
+  return <div ref={ref} className="contents">{children}</div>;
 }
 
 /* ── UI bits (kept consistent with landing) ─────────────────────────────── */
