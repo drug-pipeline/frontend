@@ -33,19 +33,21 @@ import ModuleSidebar, {
 import {
   nodeTypes,
   type NodeData,
-  type ModuleKey,
+  type ModuleKey, // ModuleKey = NodeType (NodeCard에서 통일)
 } from "@/app/components/pipeline2/NodeCard";
 import NodeDetailDock, {
   type MinimalNodeDTO,
 } from "@/app/components/pipeline2/NodeDetailDock";
-import DeepKinomePanel from "@/app/components/DeepKinomePanel"; // ★ 추가
+import DeepKinomePanel from "@/app/components/DeepKinomePanel";
 import {
   ConnectionHintsProvider,
   useConnectionHints,
 } from "@/app/components/pipeline2/ConnectionHintsContext";
-//import { allowConnection } from "@/app/components/pipeline2/connectionRules";
-import { canConnect, type NodeType } from "@/app/components/pipeline2/NodeRegistry";
+import { canConnect, getSpec, type NodeType } from "@/app/components/pipeline2/NodeRegistry";
 
+/** =====================================
+ *  NodeRegistry로 연결 검증 일원화
+ * =====================================*/
 function allowByRegistry(source?: Node<NodeData>, target?: Node<NodeData>): boolean {
   const sType = source?.data?.key as NodeType | undefined;
   const tType = target?.data?.key as NodeType | undefined;
@@ -58,18 +60,11 @@ function allowByRegistry(source?: Node<NodeData>, target?: Node<NodeData>): bool
  * =======================*/
 type NodeStatus = "PENDING" | "RUNNING" | "SUCCESS" | "FAILED";
 
-type ServerNodeType =
-  | "PDB"
-  | "COMPOUND"
-  | "VISUALIZER"
-  | "SECONDARY"
-  | "DISTANCE_MAP"
-  | "ADMET"
-  | "UNIPROT_INFO"
-  | "PDB_INFO"
-  | "DEEPKINOME"; // ★ 추가
+/** ✨ Server 타입도 NodeType로 통일 */
+type ServerNodeType = NodeType;
 
-const SERVER_NODE_TYPES: ServerNodeType[] = [
+/** ✨ 서버에서 들어오는 문자열 가드용 목록 */
+const SERVER_NODE_TYPES: readonly NodeType[] = [
   "PDB",
   "COMPOUND",
   "VISUALIZER",
@@ -79,19 +74,18 @@ const SERVER_NODE_TYPES: ServerNodeType[] = [
   "UNIPROT_INFO",
   "PDB_INFO",
   "DEEPKINOME",
-];
+] as const;
 
+/** ✨ 서버 보호용 가드: 불명 값이면 PDB로 폴백 */
 function toServerNodeType(x: unknown): ServerNodeType {
-  return SERVER_NODE_TYPES.includes(x as ServerNodeType)
-    ? (x as ServerNodeType)
-    : "PDB";
+  return SERVER_NODE_TYPES.includes(x as NodeType) ? (x as ServerNodeType) : "PDB";
 }
 
-// NOTE: 여기서는 기존 타입만 유지(DeepKinome는 런타임 캐스팅으로 처리) 
+/** 서버 DTO (백엔드와 합의된 필드) */
 type ServerNodeDTO = {
   id: number;
   projectId: number;
-  type: ServerNodeType | string; // ← 서버에서 "DEEPKINOME"이 와도 수용
+  type: ServerNodeType | string; // 서버에서 문자열로 올 수 있으므로 보험
   name: string;
   status: NodeStatus;
   x: number;
@@ -101,7 +95,6 @@ type ServerNodeDTO = {
   updatedAt?: string;
 };
 
-// 링크 생성/조회 응답
 type CreateLinkBody = {
   projectId: number;
   sourceNodeId: number;
@@ -112,7 +105,7 @@ type LinkResponse = {
   projectId: number;
   sourceNodeId: number;
   targetNodeId: number;
-  createdAt: string; // ISO
+  createdAt: string;
 };
 
 type ProjectDTO = {
@@ -124,46 +117,6 @@ type ProjectDTO = {
 type NodeLogsDTO = {
   lines: string[];
 };
-
-/* =========================
- * 모듈 키 <-> 서버 타입 매핑
- * =======================*/
-const keyToType: Record<string, ServerNodeType> = {
-  "pdb-input": "PDB",
-  "compound-input": "COMPOUND",
-  visualizer: "VISUALIZER",
-  "vis-secondary": "SECONDARY",
-  "distance-map": "DISTANCE_MAP",
-  admet: "ADMET",
-  "uniprot-info": "UNIPROT_INFO",
-  "pdb-info": "PDB_INFO",
-  "deep-kinome": "DEEPKINOME", // ★ 추가
-};
-
-function toTypeFromKey(k: string): ServerNodeType {
-  return keyToType[k] ?? "PDB";
-}
-
-
-const typeToKey: Record<ServerNodeType, ModuleKey> = {
-  PDB: "pdb-input",
-  COMPOUND: "compound-input",
-  VISUALIZER: "visualizer",
-  SECONDARY: "vis-secondary",
-  DISTANCE_MAP: "distance-map",
-  ADMET: "admet",
-  UNIPROT_INFO: "uniprot-info",
-  PDB_INFO: "pdb-info",
-  DEEPKINOME: "deep-kinome", // ★ 추가
-};
-
-
-/* =========================
- * 연결 규칙
- * =======================*/
-// 기존 allowConnection 바로 아래에 DeepKinome 규칙 추가
-
-
 
 /* =========================
  * API BASE
@@ -198,7 +151,6 @@ function SimpleModal(props: {
   );
 }
 
-
 /* =========================
  * 메인 페이지 (컨텍스트 소비자)
  * =======================*/
@@ -217,7 +169,7 @@ function PipelinePage() {
   const [nodes, setNodes, onNodesChange] = useNodesState<NodeData>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge[]>([]);
 
-  // 모든 노드의 현재 좌표를 서버에 저장 (fetch 전에 호출)
+  // 모든 노드의 현재 좌표를 서버에 저장
   const persistAllNodePositions = useCallback(async () => {
     if (!projectId) return;
     if (!nodes || nodes.length === 0) return;
@@ -260,21 +212,17 @@ function PipelinePage() {
   // === Rename 모달 상태 ===
   const [renameOpen, setRenameOpen] = useState<boolean>(false);
   const [renameInput, setRenameInput] = useState<string>("");
-  const [renaming, setRenaming] = useState<boolean>(false);
 
   // === Visualizer/Secondary 모달 ===
   const [vizOpen, setVizOpen] = useState<boolean>(false);
   const [secondaryOpen, setSecondaryOpen] = useState<boolean>(false);
 
-  // === DeepKinome 모달(예제) ===
+  // === DeepKinome 모달 ===
   const [dkOpen, setDkOpen] = useState<boolean>(false);
   const [dkTaskId, setDkTaskId] = useState<string>("example");
 
-
-
   const { setHint: setHintCtx, beginDrag, endDrag, clearHint } = useConnectionHints();
-  
-  
+
   // 프로젝트명 로드
   useEffect(() => {
     const loadName = async () => {
@@ -294,15 +242,16 @@ function PipelinePage() {
     loadName();
   }, [projectId]);
 
-  // DTO -> Flow Node
+  /** ✨ DTO → FlowNode: data.key = NodeType 그대로 사용 */
   const dtoToFlowNode = useCallback((dto: ServerNodeDTO): Node<NodeData> => {
     const t = toServerNodeType(dto.type);
-    const key: ModuleKey = typeToKey[t] ?? "pdb-input";
+    const key: ModuleKey = t; // <-- 핵심: 변환 없이 NodeType 그대로
+
     const safeStatus: NodeStatus =
       dto.status === "PENDING" ||
-        dto.status === "RUNNING" ||
-        dto.status === "SUCCESS" ||
-        dto.status === "FAILED"
+      dto.status === "RUNNING" ||
+      dto.status === "SUCCESS" ||
+      dto.status === "FAILED"
         ? dto.status
         : "PENDING";
 
@@ -323,7 +272,6 @@ function PipelinePage() {
 
   // 노드 목록 새로고침
   const refreshNodes = useCallback(async () => {
-    // fetch 전에 현재 좌표 저장
     await persistAllNodePositions();
     if (!projectId) return;
     try {
@@ -343,9 +291,9 @@ function PipelinePage() {
     } finally {
       setLoadingNodes(false);
     }
-  }, [projectId, dtoToFlowNode, setNodes]);
+  }, [projectId, dtoToFlowNode, setNodes, persistAllNodePositions]);
 
-  // 링크 목록 새로고침 (GET /api/projects/{projectId}/links)
+  // 링크 목록 새로고침
   const refreshLinks = useCallback(async () => {
     if (!projectId) return;
     try {
@@ -381,19 +329,20 @@ function PipelinePage() {
     })();
   }, [projectId, refreshNodes, refreshLinks]);
 
-  // 노드 생성
+  /** ✨ 노드 생성: spec.key(NodeType)를 서버에 그대로 전달 */
   const createNode = useCallback(
     async (spec: ModuleSpec) => {
       if (!projectId) {
         alert("Project ID가 없습니다. URL에 ?id=... 를 지정하세요.");
         return;
       }
+      const registry = getSpec(spec.key); // NodeRegistry에서 title, Icon, category 가져오기
       const pos = { x: 140 + Math.random() * 520, y: 100 + Math.random() * 360 };
 
       const payload = {
         projectId,
-        type: toTypeFromKey(spec.key),
-        name: spec.key === "visualizer" ? "Visualizer" : spec.title,
+        type: spec.key as ServerNodeType, // <-- NodeType 그대로
+        name: registry.title,
         status: "PENDING" as NodeStatus,
         x: Math.round(pos.x),
         y: Math.round(pos.y),
@@ -416,7 +365,7 @@ function PipelinePage() {
     [projectId, refreshNodes]
   );
 
-  // 링크 생성 (POST /api/projects/{projectId}/links)
+  // 링크 생성
   const postLinkAndAddEdge = useCallback(
     async (conn: Connection | Edge) => {
       if (!projectId) return;
@@ -452,7 +401,7 @@ function PipelinePage() {
           createdAt: new Date().toISOString(),
         }));
 
-        // 시각화 성공 동기화 (PDB SUCCESS + VISUALIZER/SECONDARY 쌍이면 대상도 SUCCESS)
+        // (옵션) 시각화 성공 동기화 로직 유지
         try {
           const s = serverNodeMap[String(sourceId)];
           const t = serverNodeMap[String(targetId)];
@@ -485,7 +434,6 @@ function PipelinePage() {
           console.error("[Post-link Visual SUCCESS sync] error:", e);
         }
 
-        // ---- remove 'any' cast here by constructing a proper Edge
         const newEdge: Edge = {
           id: String(created.id),
           source: String(sourceId),
@@ -666,6 +614,7 @@ function PipelinePage() {
   );
 
   // 이름 변경 저장
+  const [renaming, setRenaming] = useState<boolean>(false);
   const renameSelectedNode = useCallback(
     async (newName: string) => {
       const id = selectedNodeId;
@@ -723,12 +672,12 @@ function PipelinePage() {
 
   const defaultViewport = { x: 0, y: 0, zoom: 1 };
 
+  /** 드래그 시작 → 연결 힌트 컨텍스트 갱신 */
   const onConnectStart: OnConnectStart = (_e, params) => {
     const originId = params.nodeId ?? null;
     const handleType = params.handleType; // 'source' | 'target'
     if (!originId || !handleType) return;
 
-    // 현재 nodes에서 origin 모듈키 찾아서 컨텍스트에 주입
     const origin = nodes.find((n) => n.id === originId);
     const originKey = origin?.data?.key as ModuleKey | undefined;
     if (!originKey) return;
@@ -743,14 +692,13 @@ function PipelinePage() {
     clearHint();
   };
 
-  const onConnectEnd: OnConnectEnd = () => endAllDrag(); // 드롭 완료 시
-  const onConnectStop = () => endAllDrag(); // 드롭 취소/실패 시
+  const onConnectEnd: OnConnectEnd = () => endAllDrag();
+  const onConnectStop = () => endAllDrag();
 
-  // MinimalNodeDTO 안전 변환기 (필수 필드만 매핑)
+  // MinimalNodeDTO 안전 변환기
   const toMinimalNode = (dto: ServerNodeDTO | null): MinimalNodeDTO | null => {
     if (!dto) return null;
     const minimal: Partial<MinimalNodeDTO> = {
-      // 추정 필드 매핑: 프로젝트 구조에 맞춰 필요한 최소 필드만 제공
       id: dto.id as unknown as MinimalNodeDTO["id"],
       name: dto.name as unknown as MinimalNodeDTO["name"],
       type: String(dto.type) as unknown as MinimalNodeDTO["type"],
@@ -861,8 +809,8 @@ function PipelinePage() {
               setDkOpen(true);
             }}
           />
-          
-          {/* DeepKinome 모달 (example task) */}
+
+          {/* DeepKinome 모달 */}
           <SimpleModal
             open={dkOpen}
             title="DeepKinome"
@@ -871,7 +819,6 @@ function PipelinePage() {
           >
             <div className="h-[calc(100%-1.5rem)]">
               <div className="relative h-full w-full overflow-auto rounded-xl">
-                {/* taskId를 'example'로 고정 */}
                 <DeepKinomePanel taskId={dkTaskId} />
               </div>
             </div>
@@ -929,7 +876,7 @@ function PageFallback() {
   );
 }
 
-/** 여기서 Provider가 PipelinePage “바깥”에서 감쌉니다. */
+/** Provider는 바깥에서 감싸기 */
 export default function Page() {
   return (
     <Suspense fallback={<PageFallback />}>
