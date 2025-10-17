@@ -79,7 +79,7 @@ function toServerNodeType(x: unknown): ServerNodeType {
     : "PDB";
 }
 
-// NOTE: 여기서는 기존 타입만 유지(DeepKinome는 런타임 캐스팅으로 처리)
+// NOTE: 여기서는 기존 타입만 유지(DeepKinome는 런타임 캐스팅으로 처리) 
 type ServerNodeDTO = {
   id: number;
   projectId: number;
