@@ -43,7 +43,32 @@ import {
   ConnectionHintsProvider,
   useConnectionHints,
 } from "@/app/components/pipeline2/ConnectionHintsContext";
-import { allowConnection } from "@/app/components/pipeline2/connectionRules";
+//import { allowConnection } from "@/app/components/pipeline2/connectionRules";
+import { canConnect, type NodeType } from "@/app/components/pipeline2/NodeRegistry";
+
+const keyToNodeType: Record<ModuleKey, NodeType> = {
+  "pdb-input": "PDB",
+  "compound-input": "COMPOUND",
+  "visualizer": "VISUALIZER",
+  "vis-secondary": "SECONDARY",
+  "distance-map": "DISTANCE_MAP",
+  "admet": "ADMET",
+  "uniprot-info": "UNIPROT_INFO",
+  "pdb-info": "PDB_INFO",
+  "deep-kinome": "DEEPKINOME",
+};
+
+function allowByRegistry(
+  source?: Node<NodeData>,
+  target?: Node<NodeData>
+): boolean {
+  const sKey = source?.data?.key as ModuleKey | undefined;
+  const tKey = target?.data?.key as ModuleKey | undefined;
+  if (!sKey || !tKey) return false;
+  const sType = keyToNodeType[sKey];
+  const tType = keyToNodeType[tKey];
+  return canConnect(sType, tType);
+}
 
 /* =========================
  * 서버 스펙 타입
@@ -418,7 +443,7 @@ function PipelinePage() {
 
       const source = nodes.find((n) => n.id === sourceId);
       const target = nodes.find((n) => n.id === targetId);
-      if (!allowConnection(source, target)) return;
+      if (!allowByRegistry(source, target)) return;
 
       try {
         const body: CreateLinkBody = {
@@ -505,7 +530,7 @@ function PipelinePage() {
     (conn: Connection): boolean => {
       const source = nodes.find((n) => n.id === conn.source);
       const target = nodes.find((n) => n.id === conn.target);
-      return allowConnection(source, target);
+      return allowByRegistry(source, target);
     },
     [nodes]
   );
