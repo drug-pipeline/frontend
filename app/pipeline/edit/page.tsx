@@ -46,27 +46,10 @@ import {
 //import { allowConnection } from "@/app/components/pipeline2/connectionRules";
 import { canConnect, type NodeType } from "@/app/components/pipeline2/NodeRegistry";
 
-const keyToNodeType: Record<ModuleKey, NodeType> = {
-  "pdb-input": "PDB",
-  "compound-input": "COMPOUND",
-  "visualizer": "VISUALIZER",
-  "vis-secondary": "SECONDARY",
-  "distance-map": "DISTANCE_MAP",
-  "admet": "ADMET",
-  "uniprot-info": "UNIPROT_INFO",
-  "pdb-info": "PDB_INFO",
-  "deep-kinome": "DEEPKINOME",
-};
-
-function allowByRegistry(
-  source?: Node<NodeData>,
-  target?: Node<NodeData>
-): boolean {
-  const sKey = source?.data?.key as ModuleKey | undefined;
-  const tKey = target?.data?.key as ModuleKey | undefined;
-  if (!sKey || !tKey) return false;
-  const sType = keyToNodeType[sKey];
-  const tType = keyToNodeType[tKey];
+function allowByRegistry(source?: Node<NodeData>, target?: Node<NodeData>): boolean {
+  const sType = source?.data?.key as NodeType | undefined;
+  const tType = target?.data?.key as NodeType | undefined;
+  if (!sType || !tType) return false;
   return canConnect(sType, tType);
 }
 

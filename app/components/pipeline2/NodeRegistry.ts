@@ -1,6 +1,7 @@
 "use client";
 
-import type { ComponentType } from "react";
+import type { IconType } from "react-icons";
+
 import {
   FiPackage,
   FiEye,
@@ -28,7 +29,7 @@ export type RegistryItem = {
   /** UI */
   title: string;
   category: "Input" | "Visualizer" | "Analysis";
-  Icon: ComponentType;
+  Icon: IconType;
 
   /** React Flow */
 
