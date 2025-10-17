@@ -1,3 +1,4 @@
+// app/components/pipeline2/NodeCard.tsx
 "use client";
 
 import React from "react";
@@ -18,33 +19,32 @@ import {
   FiXCircle,
 } from "react-icons/fi";
 import { useConnectionHints } from "./ConnectionHintsContext";
+import {
+  type NodeType,
+  getSpec
+} from "./NodeRegistry";
 
 /* ===== Shared types ===== */
 export type NodeStatus = "PENDING" | "RUNNING" | "SUCCESS" | "FAILED";
 
-export type ModuleKey =
-  | "pdb-input"
-  | "compound-input"
-  | "visualizer"
-  | "vis-secondary"
-  | "distance-map"
-  | "admet"
-  | "uniprot-info"
-  | "pdb-info"
-  | "deep-kinome"; // ★ 추가
+/**
+ * ⬇️ 1단계 핵심: ModuleKey를 NodeType으로 통합
+ * - data.key는 이제 "PDB" | "COMPOUND" | ... 같은 NodeType 문자열 그대로 사용
+ */
+export type ModuleKey = NodeType;
 
 
 export type NodeData = {
-  key: ModuleKey;
+  key: ModuleKey;   // ← NodeType 그대로
   title: string;
   status: NodeStatus;
 };
 
 /* ===== Visualizer group ===== */
 const VISUALIZER_KEYS: Readonly<ModuleKey[]> = [
-  "visualizer",
-  "vis-secondary",
-  "distance-map",
+  "VISUALIZER",
+  "SECONDARY",
+  "DISTANCE_MAP",
 ];
 
 /* ===== Status styles/icons ===== */
@@ -62,18 +62,6 @@ const statusStyle = (status: NodeStatus) => {
   }
 };
 
-/* ===== Icons per module ===== */
-const KeyIcon: Record<ModuleKey, React.ComponentType<any>> = {
-  "pdb-input": FiPackage,
-  "compound-input": FiPackage,
-  visualizer: FiEye,
-  "vis-secondary": FiEye,
-  "distance-map": FiMap,
-  admet: FiPackage,
-  "uniprot-info": FiInfo,
-  "pdb-info": FiInfo,
-  "deep-kinome": FiActivity, // ★ 추가
-};
 
 
 /* ===== Small pill ===== */
@@ -85,21 +73,20 @@ function Pill({ children }: { children: React.ReactNode }) {
   );
 }
 
-/* ===== Labels ===== */
+/* ===== Labels (NodeType 기준) ===== */
 const KEY_LABEL: Record<ModuleKey, string> = {
-  "pdb-input": "PDB Input",
-  "compound-input": "Compound Input",
-  visualizer: "Visualizer",
-  "vis-secondary": "Secondary",
-  "distance-map": "Distance Map",
-  admet: "ADMET",
-  "uniprot-info": "UniProt Info",
-  "pdb-info": "PDB Info",
-  "deep-kinome": "DeepKinome", // ★ 추가
+  PDB: "PDB Input",
+  COMPOUND: "Compound Input",
+  VISUALIZER: "Visualizer",
+  SECONDARY: "Secondary",
+  DISTANCE_MAP: "Distance Map",
+  ADMET: "ADMET",
+  UNIPROT_INFO: "UniProt Info",
+  PDB_INFO: "PDB Info",
+  DEEPKINOME: "DeepKinome",
 };
 
-/* ===== Lightweight tooltip ===== */
-/* ===== Sleek glass tooltip (drop-in replacement) ===== */
+/* ===== Sleek glass tooltip ===== */
 function HandleTooltip({
   visible,
   mode,
@@ -111,7 +98,6 @@ function HandleTooltip({
   toList: ModuleKey[];
   fromList: ModuleKey[];
 }) {
-  // 마운트/언마운트 대신 트랜지션만 주고 싶다면 display 토글 대신 opacity+scale만 써도 OK
   if (!mode) return null;
 
   const show = visible && (mode === "to" ? toList.length > 0 : fromList.length > 0);
@@ -128,7 +114,6 @@ function HandleTooltip({
     >
       <div
         className={[
-          // 컨테이너
           "relative rounded-xl border border-zinc-200/70 bg-white/90 backdrop-blur",
           "shadow-[0_10px_30px_-12px_rgba(0,0,0,0.25)] ring-1 ring-black/0",
           "px-3 py-2 text-xs text-zinc-700",
@@ -136,7 +121,6 @@ function HandleTooltip({
           "dark:bg-zinc-900/85 dark:border-zinc-700/60 dark:text-zinc-200",
         ].join(" ")}
       >
-        {/* 상단 라벨 */}
         <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
           <span
             className={[
@@ -147,7 +131,6 @@ function HandleTooltip({
           {mode === "to" ? "Can connect to" : "Accepts from"}
         </div>
 
-        {/* 내용 pills */}
         <div className="flex flex-wrap gap-1.5">
           {(mode === "to" ? toList : fromList).map((k) => (
             <span
@@ -164,70 +147,67 @@ function HandleTooltip({
           ))}
         </div>
 
-        {/* 화살표 */}
         <span
           className={[
-            "absolute left-1/2 bottom-[-7px] -translate-x-1/2",
+            "absolute left/2 bottom-[-7px] -translate-x-1/2",
             "h-3 w-3 rotate-45",
             "bg-white/90 border border-zinc-200/70",
             "dark:bg-zinc-900/85 dark:border-zinc-700/60",
           ].join(" ")}
           aria-hidden
+          style={{ left: "50%" }}
         />
       </div>
     </div>
   );
 }
 
-
 /* ===== Node component ===== */
 export function NodeCard(props: NodeProps<NodeData>) {
   const { id, data, selected } = props;
   const { title, status, key: moduleKey } = data;
   const s = statusStyle(status);
-  const TypeIcon = KeyIcon[moduleKey];
+  const { Icon: TypeIcon } = getSpec(moduleKey);
 
   const isVisualizer = VISUALIZER_KEYS.includes(moduleKey);
-  const isAdmet = moduleKey === "admet";
+  const isAdmet = moduleKey === "ADMET";
 
   const hasTargetHandle =
-    isVisualizer || isAdmet || moduleKey === "uniprot-info" || moduleKey === "pdb-info" || moduleKey === "deep-kinome";
-  const hasSourceHandle = moduleKey === "pdb-input" || moduleKey === "compound-input";
+    isVisualizer || isAdmet || moduleKey === "UNIPROT_INFO" || moduleKey === "PDB_INFO" || moduleKey === "DEEPKINOME";
+  const hasSourceHandle = moduleKey === "PDB" || moduleKey === "COMPOUND";
 
   const base = "group relative rounded-2xl bg-white/90 backdrop-blur shadow-sm ring-1 ring-zinc-200 transition-all";
 
   // connection hint context
   const { hint, setHint, clearHint, beginDrag, endDrag, shouldHighlightKey, shouldDimKey } = useConnectionHints();
 
-
   // what to show in tooltip for *this* node (only when this node is the origin under hover)
   const isOrigin = hint.originNodeId === id && !!hint.mode;
-  // You can inline your rules or pass them via context; to keep this self-contained,
-  // compute "to" and "from" lists here mirroring your earlier ALLOWED object.
+
+  // 1단계에서는 기존 로직 유지: 고정 테이블을 NodeType 기준으로만 변경
   const TO_BY_KEY: Record<ModuleKey, ModuleKey[]> = {
-    "pdb-input": ["visualizer", "vis-secondary", "distance-map", "pdb-info", "uniprot-info"],
-    "compound-input": ["admet"],
-    visualizer: [],
-    "vis-secondary": [],
-    "distance-map": [],
-    admet: [],
-    "uniprot-info": [],
-    "pdb-info": [],
-    "deep-kinome": [], // ★ 추가
+    PDB: ["VISUALIZER", "SECONDARY", "DISTANCE_MAP", "PDB_INFO", "UNIPROT_INFO"],
+    COMPOUND: ["ADMET"],
+    VISUALIZER: [],
+    SECONDARY: [],
+    DISTANCE_MAP: [],
+    ADMET: [],
+    UNIPROT_INFO: [],
+    PDB_INFO: [],
+    DEEPKINOME: [], // 목적지 없음
   };
 
   const FROM_BY_KEY: Record<ModuleKey, ModuleKey[]> = {
-    "pdb-input": [],
-    "compound-input": [],
-    visualizer: ["pdb-input"],
-    "vis-secondary": ["pdb-input"],
-    "distance-map": ["pdb-input"],
-    admet: ["compound-input"],
-    "uniprot-info": ["pdb-input"],
-    "pdb-info": ["pdb-input"],
-    "deep-kinome": ["pdb-input"], // ★ 추가
+    PDB: [],
+    COMPOUND: [],
+    VISUALIZER: ["PDB"],
+    SECONDARY: ["PDB"],
+    DISTANCE_MAP: ["PDB"],
+    ADMET: ["COMPOUND"],
+    UNIPROT_INFO: ["PDB"],
+    PDB_INFO: ["PDB"],
+    DEEPKINOME: ["PDB"],
   };
-
 
   const toList = TO_BY_KEY[moduleKey] ?? [];
   const fromList = FROM_BY_KEY[moduleKey] ?? [];
@@ -282,22 +262,36 @@ export function NodeCard(props: NodeProps<NodeData>) {
       )}
 
       {/* Header */}
-      <div className={`flex items-center gap-2 px-3 py-2 rounded-t-2xl ${s.bar}`}>
-        <span className={`inline-block h-2.5 w-2.5 rounded-full ${s.dot}`} />
-        <div className={`flex items-center gap-1.5 min-w-0 ${s.text}`}>
-          <s.Icon className="shrink-0" aria-hidden />
-          <div className="truncate text-sm font-semibold leading-tight text-zinc-900">{title}</div>
+      <div className="flex items-center gap-2 px-3 py-2">
+        <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-zinc-900 text-white shadow-sm">
+          <TypeIcon aria-hidden />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-semibold text-zinc-800">{title}</div>
+          <div className="mt-0.5 flex items-center gap-2">
+            <Pill>{KEY_LABEL[moduleKey]}</Pill>
+            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${s.bar} ${s.text} ring-1 ${s.ring}`}>
+              <s.Icon aria-hidden />
+              {s.label}
+            </span>
+          </div>
         </div>
       </div>
 
-      {/* Meta row */}
-      <div className="flex items-center gap-2 px-3 py-2 text-[11px] text-zinc-600">
-        <TypeIcon className="shrink-0" />
-        <span className="truncate">{KEY_LABEL[moduleKey]}</span>
+      {/* Footer (optional) */}
+      <div className="px-3 pb-3">
+        {isAdmet && (
+          <div className="text-[11px] text-zinc-500">Accepts from: Compound</div>
+        )}
+        {isVisualizer && (
+          <div className="text-[11px] text-zinc-500">Accepts from: PDB</div>
+        )}
       </div>
     </div>
   );
 }
 
-/* ===== nodeTypes ===== */
-export const nodeTypes: NodeTypes = { card: NodeCard };
+/* ===== React Flow nodeTypes export (page.tsx에서 사용) ===== */
+export const nodeTypes: NodeTypes = {
+  card: NodeCard,
+};
