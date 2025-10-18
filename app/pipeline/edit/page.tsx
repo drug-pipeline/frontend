@@ -81,7 +81,9 @@ function toServerNodeType(x: unknown): ServerNodeType {
   return SERVER_NODE_TYPES.includes(x as NodeType) ? (x as ServerNodeType) : "PDB";
 }
 
-/** 서버 DTO (백엔드와 합의된 필드) */
+/** ===== 백엔드 DTO (Graph API 기준) ===== */
+type ProjectDTO = { id: number; name: string; createdAt?: string | null };
+
 type ServerNodeDTO = {
   id: number;
   projectId: number;
@@ -95,11 +97,6 @@ type ServerNodeDTO = {
   updatedAt?: string;
 };
 
-type CreateLinkBody = {
-  projectId: number;
-  sourceNodeId: number;
-  targetNodeId: number;
-};
 type LinkResponse = {
   id: number;
   projectId: number;
@@ -108,10 +105,17 @@ type LinkResponse = {
   createdAt: string;
 };
 
-type ProjectDTO = {
-  id: number;
-  name: string;
-  createdAt?: string | null;
+type NodeDetailResponse = {
+  meta?: Record<string, unknown>;
+  files?: Array<{ id: number; name: string; size?: number; url?: string }>;
+  extra?: Record<string, unknown>;
+};
+
+type GraphResponse = {
+  project: ProjectDTO;
+  nodes: ServerNodeDTO[];
+  links: LinkResponse[];
+  details: Record<string, NodeDetailResponse>; // key = nodeId
 };
 
 type NodeLogsDTO = {
@@ -163,7 +167,7 @@ function PipelinePage() {
   }, [searchParams]);
 
   const [workflowName, setWorkflowName] = useState<string>("Protein Workflow");
-  const [loadingName, setLoadingName] = useState<boolean>(false);
+  const [loadingInitial, setLoadingInitial] = useState<boolean>(false);
 
   // React Flow
   const [nodes, setNodes, onNodesChange] = useNodesState<NodeData>([]);
@@ -196,11 +200,9 @@ function PipelinePage() {
   const [showMiniMap, setShowMiniMap] = useState<boolean>(true);
   const [showControls, setShowControls] = useState<boolean>(true);
 
-  // 서버 노드 로딩 상태
-  const [loadingNodes, setLoadingNodes] = useState<boolean>(false);
-
-  // 서버 노드 캐시
+  // 서버 캐시
   const [serverNodeMap, setServerNodeMap] = useState<Record<string, ServerNodeDTO>>({});
+  const [detailMap, setDetailMap] = useState<Record<string, NodeDetailResponse>>({});
 
   // Detail Dock 상태
   const [detailNode, setDetailNode] = useState<ServerNodeDTO | null>(null);
@@ -222,25 +224,6 @@ function PipelinePage() {
   const [dkTaskId, setDkTaskId] = useState<string>("example");
 
   const { setHint: setHintCtx, beginDrag, endDrag, clearHint } = useConnectionHints();
-
-  // 프로젝트명 로드
-  useEffect(() => {
-    const loadName = async () => {
-      if (!projectId) return;
-      try {
-        setLoadingName(true);
-        const res = await fetch(`${API_BASE}/projects/${projectId}`, { method: "GET" });
-        if (!res.ok) throw new Error(`GET /projects/${projectId} failed (${res.status})`);
-        const data: ProjectDTO = await res.json();
-        if (data?.name) setWorkflowName(data.name);
-      } catch (err) {
-        console.error("[Load Project Name] error:", err);
-      } finally {
-        setLoadingName(false);
-      }
-    };
-    loadName();
-  }, [projectId]);
 
   /** ✨ DTO → FlowNode: data.key = NodeType 그대로 사용 */
   const dtoToFlowNode = useCallback((dto: ServerNodeDTO): Node<NodeData> => {
@@ -270,64 +253,77 @@ function PipelinePage() {
     };
   }, []);
 
-  // 노드 목록 새로고침
-  const refreshNodes = useCallback(async () => {
-    await persistAllNodePositions();
+  /** ===== Graph 한 번에 로드 ===== */
+  const loadGraph = useCallback(async () => {
     if (!projectId) return;
+    setLoadingInitial(true);
     try {
-      setLoadingNodes(true);
-      const res = await fetch(`${API_BASE}/projects/${projectId}/nodes`, { method: "GET" });
-      if (!res.ok) throw new Error(`GET /projects/${projectId}/nodes failed (${res.status})`);
-      const list: ServerNodeDTO[] = await res.json();
+      const res = await fetch(`${API_BASE}/projects/${projectId}/graph?include=nodes,links,details`, { method: "GET" });
+      if (!res.ok) throw new Error(`GET /projects/${projectId}/graph failed (${res.status})`);
+      const graph: GraphResponse = await res.json();
 
-      const flowNodes = (list ?? []).map(dtoToFlowNode);
+      // 프로젝트명
+      if (graph?.project?.name) setWorkflowName(graph.project.name);
+
+      // 노드/링크
+      const flowNodes = (graph.nodes ?? []).map(dtoToFlowNode);
       setNodes(flowNodes);
 
-      const m: Record<string, ServerNodeDTO> = {};
-      for (const n of list) m[String(n.id)] = n;
-      setServerNodeMap(m);
-    } catch (err) {
-      console.error("[Refresh Nodes] error:", err);
-    } finally {
-      setLoadingNodes(false);
-    }
-  }, [projectId, dtoToFlowNode, setNodes, persistAllNodePositions]);
-
-  // 링크 목록 새로고침
-  const refreshLinks = useCallback(async () => {
-    if (!projectId) return;
-    try {
-      const res = await fetch(`${API_BASE}/projects/${projectId}/links`, { method: "GET" });
-      if (!res.ok) {
-        console.error(`[Refresh Links] GET /projects/${projectId}/links -> ${res.status}`);
-        setEdges([]);
-        return;
-      }
-      const list: LinkResponse[] = await res.json();
-
-      const serverEdges: Edge[] = (list ?? []).map((l) => ({
+      const edgesFromServer: Edge[] = (graph.links ?? []).map((l) => ({
         id: String(l.id),
         source: String(l.sourceNodeId),
         target: String(l.targetNodeId),
         animated: true,
         style: { strokeWidth: 2 },
       }));
+      setEdges(edgesFromServer);
 
-      setEdges(serverEdges);
+      // 캐시
+      const nmap: Record<string, ServerNodeDTO> = {};
+      for (const n of graph.nodes ?? []) nmap[String(n.id)] = n;
+      setServerNodeMap(nmap);
+
+      setDetailMap(graph.details ?? {});
     } catch (err) {
-      console.error("[Refresh Links] error:", err);
-      setEdges([]);
+      console.error("[Load Graph] error:", err);
+      // 실패 시 기존 개별 API 폴백
+      try {
+        const [nodesRes, linksRes] = await Promise.all([
+          fetch(`${API_BASE}/projects/${projectId}/nodes`, { method: "GET" }),
+          fetch(`${API_BASE}/projects/${projectId}/links`, { method: "GET" }),
+        ]);
+        if (nodesRes.ok) {
+          const list: ServerNodeDTO[] = await nodesRes.json();
+          const flowNodes = (list ?? []).map(dtoToFlowNode);
+          setNodes(flowNodes);
+          const m: Record<string, ServerNodeDTO> = {};
+          for (const n of list) m[String(n.id)] = n;
+          setServerNodeMap(m);
+        }
+        if (linksRes.ok) {
+          const list: LinkResponse[] = await linksRes.json();
+          const serverEdges: Edge[] = (list ?? []).map((l) => ({
+            id: String(l.id),
+            source: String(l.sourceNodeId),
+            target: String(l.targetNodeId),
+            animated: true,
+            style: { strokeWidth: 2 },
+          }));
+          setEdges(serverEdges);
+        }
+      } catch (e) {
+        console.error("[Load Graph Fallback] error:", e);
+      }
+    } finally {
+      setLoadingInitial(false);
     }
-  }, [projectId, setEdges]);
+  }, [projectId, dtoToFlowNode, setNodes, setEdges]);
 
   // 최초 로드
   useEffect(() => {
     if (!projectId) return;
-    (async () => {
-      await refreshNodes();
-      await refreshLinks();
-    })();
-  }, [projectId]);
+    loadGraph();
+  }, [projectId, loadGraph]);
 
   /** ✨ 노드 생성: spec.key(NodeType)를 서버에 그대로 전달 */
   const createNode = useCallback(
@@ -356,13 +352,14 @@ function PipelinePage() {
           body: JSON.stringify(payload),
         });
         if (!res.ok) throw new Error(`POST /projects/${projectId}/nodes failed (${res.status})`);
-        await refreshNodes();
+        // 국지 업데이트: 전체 리패치 대신 그래프 재요청(간단한 선택)
+        await loadGraph();
       } catch (err) {
         console.error("[Create Node] error:", err);
         alert("노드 생성에 실패했습니다.");
       }
     },
-    [projectId, refreshNodes]
+    [projectId, loadGraph]
   );
 
   // 링크 생성
@@ -378,7 +375,7 @@ function PipelinePage() {
       if (!allowByRegistry(source, target)) return;
 
       try {
-        const body: CreateLinkBody = {
+        const body = {
           projectId,
           sourceNodeId: Number(sourceId),
           targetNodeId: Number(targetId),
@@ -393,61 +390,27 @@ function PipelinePage() {
           alert(`링크 생성 실패 (${res.status}).`);
           return;
         }
-        const created: LinkResponse = await res.json().catch(() => ({
-          id: -1,
-          projectId,
-          sourceNodeId: Number(sourceId),
-          targetNodeId: Number(targetId),
-          createdAt: new Date().toISOString(),
-        }));
+        const created: LinkResponse = await res.json();
 
-        // (옵션) 시각화 성공 동기화 로직 유지
-        try {
-          const s = serverNodeMap[String(sourceId)];
-          const t = serverNodeMap[String(targetId)];
-          const isVisPair =
-            ((s?.type === "VISUALIZER" || s?.type === "SECONDARY") &&
-              t?.type === "PDB" &&
-              t?.status === "SUCCESS") ||
-            ((t?.type === "VISUALIZER" || t?.type === "SECONDARY") &&
-              s?.type === "PDB" &&
-              s?.status === "SUCCESS");
-          if (isVisPair && projectId) {
-            const targetVisId =
-              s?.type === "VISUALIZER" || s?.type === "SECONDARY" ? s.id : t?.id;
-            if (targetVisId) {
-              const res2 = await fetch(
-                `${API_BASE}/projects/${projectId}/nodes/${targetVisId}`,
-                {
-                  method: "PUT",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ status: "SUCCESS" }),
-                }
-              );
-              if (!res2.ok)
-                console.error("[Vis/Secondary->SUCCESS] PUT failed:", res2.status);
-              await refreshNodes();
-              await refreshLinks();
-            }
-          }
-        } catch (e) {
-          console.error("[Post-link Visual SUCCESS sync] error:", e);
-        }
-
-        const newEdge: Edge = {
-          id: String(created.id),
-          source: String(sourceId),
-          target: String(targetId),
-          animated: true,
-          style: { strokeWidth: 2 },
-        };
-        setEdges((eds) => addEdge(newEdge, eds));
+        // 국지 업데이트: 방금 만든 에지 추가
+        setEdges((eds) =>
+          addEdge(
+            {
+              id: String(created.id),
+              source: String(created.sourceNodeId),
+              target: String(created.targetNodeId),
+              animated: true,
+              style: { strokeWidth: 2 },
+            },
+            eds
+          )
+        );
       } catch (err) {
         console.error("[Create Link] error:", err);
         alert("링크 생성 중 오류가 발생했습니다.");
       }
     },
-    [projectId, nodes, setEdges, serverNodeMap, refreshNodes, refreshLinks]
+    [projectId, nodes, setEdges]
   );
 
   const onConnect = useCallback(
@@ -542,7 +505,7 @@ function PipelinePage() {
     }
   }, [projectId, workflowName, router]);
 
-  // 상세 1건 재로딩
+  // 상세 1건 재로딩 (개별 엔드포인트 사용)
   const reloadDetail = useCallback(
     async (nodeId: string) => {
       if (!projectId || !nodeId) return;
@@ -602,18 +565,19 @@ function PipelinePage() {
     [projectId]
   );
 
-  // 선택 변경 → 캐시로 표시
+  // 선택 변경 → 캐시로 표시 (graph의 details 우선)
   const onSelectionChange = useCallback(
     (params: OnSelectionChangeParams) => {
       const id = params.nodes?.[0]?.id ?? null;
       setSelectedNodeId(id);
       setLogs(null);
-      setDetailNode(id ? serverNodeMap[id] ?? null : null);
+      const cached = id ? serverNodeMap[id] ?? null : null;
+      setDetailNode(cached);
     },
     [serverNodeMap]
   );
 
-  // 이름 변경 저장
+  // 이름 변경 저장 (국지 갱신)
   const [renaming, setRenaming] = useState<boolean>(false);
   const renameSelectedNode = useCallback(
     async (newName: string) => {
@@ -627,8 +591,15 @@ function PipelinePage() {
           body: JSON.stringify({ name: newName }),
         });
         if (!res.ok) throw new Error(`PUT node ${id} failed (${res.status})`);
-        await refreshNodes();
-        await refreshLinks();
+
+        // 로컬 캐시/뷰 동기화 (전체 리패치 대신)
+        setServerNodeMap((prev) => ({
+          ...prev,
+          [id]: { ...(prev[id] as ServerNodeDTO), name: newName },
+        }));
+        setNodes((ns) =>
+          ns.map((n) => (n.id === id ? { ...n, data: { ...n.data, title: newName } } : n))
+        );
       } catch (err) {
         console.error("[Rename Node] error:", err);
         alert("이름 변경에 실패했습니다.");
@@ -636,39 +607,8 @@ function PipelinePage() {
         setSavingNode(false);
       }
     },
-    [projectId, selectedNodeId, refreshNodes, refreshLinks]
+    [projectId, selectedNodeId]
   );
-
-  // === 워크플로우명 변경 ===
-  const openRenameModal = useCallback(() => {
-    setRenameInput(workflowName);
-    setRenameOpen(true);
-  }, [workflowName]);
-
-  const submitRename = useCallback(async () => {
-    if (!projectId) return;
-    const name = renameInput.trim();
-    if (!name) {
-      alert("이름을 입력하세요.");
-      return;
-    }
-    try {
-      setRenaming(true);
-      const res = await fetch(`${API_BASE}/projects/${projectId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
-      });
-      if (!res.ok) throw new Error(`PUT /projects/${projectId} failed (${res.status})`);
-      setWorkflowName(name);
-      setRenameOpen(false);
-    } catch (err) {
-      console.error("[Rename Project] error:", err);
-      alert("워크플로우 이름 변경에 실패했습니다.");
-    } finally {
-      setRenaming(false);
-    }
-  }, [projectId, renameInput]);
 
   const defaultViewport = { x: 0, y: 0, zoom: 1 };
 
@@ -718,7 +658,10 @@ function PipelinePage() {
       <div className="relative z-[10000]">
         <Header
           workflowName={workflowName}
-          onOpenRename={openRenameModal}
+          onOpenRename={() => {
+            setRenameInput(workflowName);
+            setRenameOpen(true);
+          }}
           onDuplicate={onDuplicate}
           onDelete={onDelete}
           onSave={onSave}
@@ -733,10 +676,10 @@ function PipelinePage() {
         <ModuleSidebar modules={MODULES} onCreate={createNode} />
 
         <main className="relative">
-          {/* 로딩 오버레이 */}
-          {loadingNodes && (
+          {/* 최초 로딩 오버레이 (한 번만) */}
+          {loadingInitial && (
             <div className="absolute inset-0 z-10 grid place-items-center bg-white/50 text-xs text-zinc-600">
-              Syncing nodes…
+              Loading graph…
             </div>
           )}
 
@@ -793,9 +736,10 @@ function PipelinePage() {
             reloadingDetail={reloadingDetail}
             projectId={projectId ?? 0}
             onRequestRefreshNodes={async () => {
+              // 전체 새로고침 대신 위치 저장만 수행하거나,
+              // 필요한 경우에만 그래프 재로드
               await persistAllNodePositions();
-              await refreshNodes();
-              await refreshLinks();
+              await loadGraph();
             }}
             onOpenVisualizer={() => {
               setVizOpen(true);
@@ -845,7 +789,28 @@ function PipelinePage() {
                 </button>
                 <button
                   type="button"
-                  onClick={submitRename}
+                  onClick={async () => {
+                    if (!projectId) return;
+                    const name = renameInput.trim();
+                    if (!name) {
+                      alert("이름을 입력하세요.");
+                      return;
+                    }
+                    try {
+                      // 프로젝트 이름 PUT 후, 뷰만 업데이트
+                      const res = await fetch(`${API_BASE}/projects/${projectId}`, {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ name }),
+                      });
+                      if (!res.ok) throw new Error(`PUT /projects/${projectId} failed (${res.status})`);
+                      setWorkflowName(name);
+                      setRenameOpen(false);
+                    } catch (err) {
+                      console.error("[Rename Project] error:", err);
+                      alert("워크플로우 이름 변경에 실패했습니다.");
+                    }
+                  }}
                   className="rounded-lg bg-zinc-900 px-3 py-1.5 text-sm text-white disabled:opacity-60"
                   disabled={renaming}
                 >
