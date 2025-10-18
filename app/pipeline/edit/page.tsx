@@ -327,7 +327,7 @@ function PipelinePage() {
       await refreshNodes();
       await refreshLinks();
     })();
-  }, [projectId, refreshNodes, refreshLinks]);
+  }, [projectId]);
 
   /** ✨ 노드 생성: spec.key(NodeType)를 서버에 그대로 전달 */
   const createNode = useCallback(
