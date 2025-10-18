@@ -193,6 +193,17 @@ function PipelinePage() {
     }
   }, [projectId, nodes]);
 
+  // 모든 위치를 저장한 다음 전달된 비동기 작업을 실행하는 유틸
+  const saveBefore = useCallback(async <T,>(fn: () => Promise<T>): Promise<T> => {
+    try {
+      await persistAllNodePositions();
+    } catch (e) {
+      console.warn("[saveBefore] persist positions failed (ignored)", e);
+    }
+    return await fn();
+  }, [persistAllNodePositions]);
+
+
   // 선택 상태
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
@@ -319,11 +330,27 @@ function PipelinePage() {
     }
   }, [projectId, dtoToFlowNode, setNodes, setEdges]);
 
+  // 저장 먼저, 그 다음 그래프 재로딩
+  const syncAndReloadGraph = useCallback(async () => {
+    await saveBefore(async () => {
+      await loadGraph();
+      return;
+    });
+  }, [saveBefore, loadGraph]);
+
+
+
   // 최초 로드
   useEffect(() => {
     if (!projectId) return;
     loadGraph();
   }, [projectId, loadGraph]);
+
+  // 페이지 이탈/언마운트 시 현재 좌표 저장 (best effort)
+  useEffect(() => {
+    return () => { void persistAllNodePositions(); };
+  }, [persistAllNodePositions]);
+
 
   /** ✨ 노드 생성: spec.key(NodeType)를 서버에 그대로 전달 */
   const createNode = useCallback(
@@ -346,6 +373,8 @@ function PipelinePage() {
       };
 
       try {
+        // 새 노드 추가 전 현재 위치 저장
+        await saveBefore(async () => Promise.resolve());
         const res = await fetch(`${API_BASE}/projects/${projectId}/nodes`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -353,7 +382,7 @@ function PipelinePage() {
         });
         if (!res.ok) throw new Error(`POST /projects/${projectId}/nodes failed (${res.status})`);
         // 국지 업데이트: 전체 리패치 대신 그래프 재요청(간단한 선택)
-        await loadGraph();
+        await syncAndReloadGraph();
       } catch (err) {
         console.error("[Create Node] error:", err);
         alert("노드 생성에 실패했습니다.");
@@ -532,9 +561,13 @@ function PipelinePage() {
       if (!projectId || !nodeId) return;
       setRefreshingLogs(true);
       try {
-        const res = await fetch(`${API_BASE}/projects/${projectId}/nodes/${nodeId}/logs`, {
+        let res = await fetch(`${API_BASE}/nodes/${nodeId}/logs`, {
           method: "GET",
         });
+        if (res.status === 405) {
+          // fallback for old route shape
+          res = await fetch(`${API_BASE}/projects/${projectId}/nodes/${nodeId}/logs`, { method: "GET" });
+        }
         if (res.status === 404) {
           setLogs([]);
           return;
@@ -738,8 +771,7 @@ function PipelinePage() {
             onRequestRefreshNodes={async () => {
               // 전체 새로고침 대신 위치 저장만 수행하거나,
               // 필요한 경우에만 그래프 재로드
-              await persistAllNodePositions();
-              await loadGraph();
+              await syncAndReloadGraph();
             }}
             onOpenVisualizer={() => {
               setVizOpen(true);
