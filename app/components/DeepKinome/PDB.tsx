@@ -66,7 +66,7 @@ export default function PDB({ pdbId }: PDBProps) {
   const [error, setError] = useState<string | null>(null);
 
   // SIMPLE style API base (백엔드 프록시와 동일)
-  const API_BASE = "http://34.61.162.19/api/deepkinome";
+  const API_BASE = "/api/deepkinome";
 
   useEffect(() => {
     if (pdbId === undefined || pdbId === null) {

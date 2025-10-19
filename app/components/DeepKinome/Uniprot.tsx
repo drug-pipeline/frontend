@@ -63,7 +63,7 @@ export default function Uniprot({ uniprotId }: UniprotProps) {
   const [error, setError] = useState<string | null>(null);
 
   // SIMPLE style base (matches your other DeepKinome calls)
-  const API_BASE = "http://34.61.162.19/api/deepkinome";
+  const API_BASE = "/api/deepkinome";
 
   useEffect(() => {
     if (uniprotId === undefined || uniprotId === null) {

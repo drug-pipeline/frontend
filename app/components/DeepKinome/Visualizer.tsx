@@ -79,7 +79,7 @@ type VisualizerProps = NGLViewerProps;
 --------------------------------*/
 const NGLViewer: React.FC<NGLViewerProps> = ({ uniprotId, cid, taskId }) => {
   // SIMPLE style API base
-  const API_BASE = "http://34.61.162.19/api/deepkinome";
+  const API_BASE = "/api/deepkinome";
 
   const stageHostRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<NglStage | null>(null);
