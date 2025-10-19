@@ -1,17 +1,22 @@
 // next.config.js
 /** @type {import('next').NextConfig} */
+const API_ORIGIN = process.env.API_ORIGIN;
+
+console.log("[next.config.js] NODE_ENV=", process.env.NODE_ENV);
+console.log("[next.config.js] API_ORIGIN=", API_ORIGIN);
+
 const nextConfig = {
   async rewrites() {
-    return {
-      // beforeFiles: [],      // (필요 없으면 생략)
-      // afterFiles: [],       // (필요 없으면 생략)
-      fallback: [
+    if (process.env.NODE_ENV === "development" && API_ORIGIN) {
+      return [
         {
           source: "/api/:path*",
-          destination: "http://34.61.162.19/api/:path*",
+          destination: `${API_ORIGIN}/api/:path*`,
         },
-      ],
-    };
+      ];
+    }
+    return []; // 프로덕션에선 Nginx가 /api를 프록시
   },
 };
+
 module.exports = nextConfig;
